@@ -47,13 +47,15 @@ export default function CompanySettings() {
             d.setMonth(d.getMonth() + months);
             return d;
         };
+        const ctFilingDate = addMonths(accountingEnd, 9)
 
         const formatISO = (d) => d.toISOString().slice(0, 10);
 
         return {
-            chAccounts: formatISO(addMonths(accountingEnd, 9)),
-            ctPayment: formatISO(addMonths(accountingEnd, 9)),
-            ctFiling: formatISO(addMonths(accountingEnd, 12)),
+            chAccounts: formatISO(addMonths(company.incorporationDate, 21)),
+            ctPayment: formatISO(ctFilingDate),
+            ctFiling: formatISO(addMonths(ctFilingDate, 12)),
+            corporationStatement: formatISO(addMonths(company.incorporationDate, 12)),
         };
     };
 
@@ -185,6 +187,7 @@ export default function CompanySettings() {
                     {Object.entries(deadlines).map(([key, date]) => {
                         const days = daysUntil(date);
                         const label = {
+                            corporationStatement: "Corporation Statement Due",
                             chAccounts: "Companies House Accounts Deadline",
                             ctPayment: "Corporation Tax Payment Deadline",
                             ctFiling: "Corporation Tax Filing Deadline",
