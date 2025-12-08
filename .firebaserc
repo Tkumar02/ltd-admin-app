@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "projsept-e73a6",
+    "ltd-admin-app": "projsept-e73a6"
+  },
+  "targets": {
+    "projsept-e73a6": {
+      "hosting": {
+        "ltd-admin-app": [
+          "ltd-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

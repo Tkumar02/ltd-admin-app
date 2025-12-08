@@ -8,3 +8,9 @@ service cloud.firestore {
     }
   }
 }
+
+
+to deploy:
+
+npm run build
+firebase deploy --only hosting:ltd-admin-app
