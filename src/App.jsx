@@ -1,26 +1,37 @@
+// App.jsx
+import { Routes, Route, Navigate } from "react-router-dom";
+
 import MainLayout from "./layout/MainLayout";
-import AuthForm from "./components/AuthForm";
 import CompanySettings from "./pages/CompanySettings";
-import { useState } from "react";
+import DashboardScreen from "./pages/Dashboard";
+import AuthForm from "./components/AuthForm";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-function App() {
-  const [user, setUser] = useState(null);
-
+export default function App() {
   return (
+    <Routes>
+      {/* Public login route */}
+      <Route path="/login" element={<AuthForm />} />
 
-    <MainLayout>
-      <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
-      <p>Your ltd company overview will appear here.</p>
-      <>
-        {!user ? (
-          <AuthForm onUserChange={setUser} />
-        ) : (
-          <CompanySettings user={user} />
-        )}
-      </>
-    </MainLayout>
+      {/* Protected routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        {/* Default redirect */}
+        <Route index element={<Navigate to="/company-settings" replace />} />
+
+        {/* Pages */}
+        <Route path="company-settings" element={<CompanySettings />} />
+        <Route path="dashboard" element={<DashboardScreen />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/company-settings" replace />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;
-

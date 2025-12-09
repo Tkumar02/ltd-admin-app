@@ -44,7 +44,7 @@ export default function MainLayout() {
                 <h1 className="hidden md:block text-3xl font-bold text-red-600 mb-4">Admin App</h1>
 
                 <nav className="flex flex-col space-y-3">
-                    <Link to="#" className="text-yellow-400 hover:text-green-400">Dashboard</Link>
+                    <Link to="/dashboard" className="text-yellow-400 hover:text-green-400">Dashboard</Link>
                     <Link to="#" className="text-pink-400 hover:text-purple-400">Expenses</Link>
                     <Link to="#" className="text-blue-400 hover:text-indigo-400">Dividends</Link>
                     <Link to="#" className="text-green-400 hover:text-blue-400">Filings</Link>
