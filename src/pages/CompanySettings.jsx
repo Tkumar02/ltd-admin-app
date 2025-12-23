@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase/firebaseConfig';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore";
 import { ToastContainer, toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import 'react-toastify/dist/ReactToastify.css';
 
 
 const CompanyScreen = () => {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [companies, setCompanies] = useState([]);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -16,6 +18,7 @@ const CompanyScreen = () => {
     const [number, setNumber] = useState('');
     const [accountingStart, setAccountingStart] = useState('');
     const [incorporationDate, setIncorporationDate] = useState('');
+    const [address, setAddress] = useState('');
 
     const getCompanies = async () => {
         try {
@@ -55,6 +58,7 @@ const CompanyScreen = () => {
                 number,
                 accountingStart,
                 incorporationDate,
+                address,
                 email: user.email,
             });
             toast.success('Company saved successfully!');
@@ -63,6 +67,7 @@ const CompanyScreen = () => {
             setNumber('');
             setAccountingStart('');
             setIncorporationDate('');
+            setAddress('');
 
             setShowAddForm(false);
             getCompanies(); // Refresh the list
@@ -152,13 +157,22 @@ const CompanyScreen = () => {
                     </div>
 
                     <div>
+                        <label className="block text-sm font-medium">Registered Address</label>
+                        <textarea
+                            className="mt-1 block w-full border rounded px-3 py-2"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            required
+                        />
+                    </div>
+
+                    <div>
                         <label className="block text-sm font-medium">Accounting Start</label>
                         <input
                             type="date"
                             className="mt-1 block w-full border rounded px-3 py-2"
                             value={accountingStart}
                             onChange={(e) => setAccountingStart(e.target.value)}
-                            required
                         />
                     </div>
 
@@ -200,6 +214,14 @@ const CompanyScreen = () => {
                                         <p><strong>Accounting Start:</strong> {company.accountingStart}</p>
                                         <p><strong>Incorporation Date:</strong> {company.incorporationDate}</p>
                                     </div>
+
+                                    <button
+                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                                        onClick={() => navigate(`/company/${company.number}`)}
+                                    >
+                                        View
+                                    </button>
+
                                     <button
                                         className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition ml-4"
                                         onClick={() => handleDeleteCompany(company.number, company.name)}
