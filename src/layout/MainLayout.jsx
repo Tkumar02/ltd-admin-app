@@ -47,8 +47,8 @@ export default function MainLayout() {
                 <nav className="flex flex-col space-y-3">
                     <Link to="/dashboard" className="text-yellow-400 hover:text-green-400">Dashboard</Link>
                     <Link to="#" className="text-pink-400 hover:text-purple-400">Expenses</Link>
-                    <Link to="#" className="text-blue-400 hover:text-indigo-400">Dividends</Link>
-                    <Link to="#" className="text-green-400 hover:text-blue-400">Filings</Link>
+                    <Link to="Test" className="text-blue-400 hover:text-indigo-400">Dividends</Link>
+                    <Link to="/filings" className="text-green-400 hover:text-blue-400">Filings</Link>
                     <Link to="/company-settings" className="text-orange-400 hover:text-red-400">Company Settings</Link>
                     <button onClick={handleLogout} className="text-red-500 hover:text-red-300">Logout</button>
                 </nav>

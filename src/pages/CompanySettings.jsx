@@ -167,16 +167,6 @@ const CompanyScreen = () => {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium">Accounting Start</label>
-                        <input
-                            type="date"
-                            className="mt-1 block w-full border rounded px-3 py-2"
-                            value={accountingStart}
-                            onChange={(e) => setAccountingStart(e.target.value)}
-                        />
-                    </div>
-
-                    <div>
                         <label className="block text-sm font-medium">Incorporation Date</label>
                         <input
                             type="date"
@@ -184,6 +174,16 @@ const CompanyScreen = () => {
                             value={incorporationDate}
                             onChange={(e) => setIncorporationDate(e.target.value)}
                             required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium">Accounting Start</label>
+                        <input
+                            type="date"
+                            className="mt-1 block w-full border rounded px-3 py-2"
+                            value={accountingStart}
+                            onChange={(e) => setAccountingStart(e.target.value)}
                         />
                     </div>
 
@@ -234,7 +234,7 @@ const CompanyScreen = () => {
                     )}
                 </div>
             )}
-            
+
             <ToastContainer position="top-right" autoClose={3000} />
 
         </div>

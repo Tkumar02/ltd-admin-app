@@ -108,6 +108,20 @@ const CompanyDetails = () => {
         </div>
 
         <div>
+          <label className="font-medium">Incorporation Date:</label>
+          {editMode ? (
+            <input
+              type="date"
+              className="mt-1 block w-full border rounded px-3 py-2"
+              value={incorporationDate}
+              onChange={(e) => setIncorporationDate(e.target.value)}
+            />
+          ) : (
+            <p>{company.incorporationDate}</p>
+          )}
+        </div>
+
+        <div>
           <label className="font-medium">Accounting Start:</label>
           {editMode ? (
             <input
@@ -121,19 +135,6 @@ const CompanyDetails = () => {
           )}
         </div>
 
-        <div>
-          <label className="font-medium">Incorporation Date:</label>
-          {editMode ? (
-            <input
-              type="date"
-              className="mt-1 block w-full border rounded px-3 py-2"
-              value={incorporationDate}
-              onChange={(e) => setIncorporationDate(e.target.value)}
-            />
-          ) : (
-            <p>{company.incorporationDate}</p>
-          )}
-        </div>
       </div>
 
       {/* Buttons */}
