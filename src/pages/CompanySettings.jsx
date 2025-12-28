@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from "fireb
 import { ToastContainer, toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import 'react-toastify/dist/ReactToastify.css';
-
+import "../index.css";
 
 const CompanyScreen = () => {
     const navigate = useNavigate();
@@ -206,13 +206,13 @@ const CompanyScreen = () => {
                             {companies.map(company => (
                                 <li
                                     key={company.id}
-                                    className="p-4 bg-gray-50 rounded shadow hover:shadow-md transition flex justify-between items-start"
+                                    className="p-4 bg-gray-50 rounded shadow hover:shadow-md transition items-start"
                                 >
                                     <div>
                                         <h4 className="font-semibold text-lg">{company.name}</h4>
                                         <p><strong>Number:</strong> {company.number}</p>
-                                        <p><strong>Accounting Start:</strong> {company.accountingStart}</p>
-                                        <p><strong>Incorporation Date:</strong> {company.incorporationDate}</p>
+                                        {/* <p><strong>Incorporation Date</strong> <br/> {company.incorporationDate}</p>
+                                        <p><strong>Accounting Start Date</strong> <br/> {company.accountingStart}</p> */}
                                     </div>
 
                                     <button
@@ -223,7 +223,7 @@ const CompanyScreen = () => {
                                     </button>
 
                                     <button
-                                        className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition ml-4"
+                                        className="px-3 mr-4 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition ml-4"
                                         onClick={() => handleDeleteCompany(company.number, company.name)}
                                     >
                                         Delete

@@ -1,3 +1,4 @@
+//MainLayout.jsx
 import { useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { logout, useAuth } from "../firebase/firebaseAuth.jsx";
