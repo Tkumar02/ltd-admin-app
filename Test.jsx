@@ -1,6 +1,6 @@
 import { collection, addDoc } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import useCompanies from "../utils/useCompanies";
+import { db } from "./src/firebase/firebaseConfig";
+import useCompanies from "./src/utils/useCompanies";
 
 export default function FilingsPage() {
     const { companies, loading } = useCompanies();
