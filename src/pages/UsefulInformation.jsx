@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 
 const CompanyDashboard = () => {
-    // Load initial state from localStorage if it exists
     const [incDate, setIncDate] = useState(() => localStorage.getItem('incDate') || "");
     const [tradingDate, setTradingDate] = useState(() => localStorage.getItem('tradingDate') || "");
+    const [firstYear, setFirstYear] = useState(() => JSON.parse(localStorage.getItem('firstYear')) || true);
     const [checkedItems, setCheckedItems] = useState(() => {
         const saved = localStorage.getItem('checkedItems');
         return saved ? JSON.parse(saved) : {};
@@ -12,12 +12,12 @@ const CompanyDashboard = () => {
 
     const [deadlines, setDeadlines] = useState([]);
 
-    // Save to localStorage whenever values change
     useEffect(() => {
         localStorage.setItem('incDate', incDate);
         localStorage.setItem('tradingDate', tradingDate);
+        localStorage.setItem('firstYear', JSON.stringify(firstYear));
         localStorage.setItem('checkedItems', JSON.stringify(checkedItems));
-    }, [incDate, tradingDate, checkedItems]);
+    }, [incDate, tradingDate, firstYear, checkedItems]);
 
     useEffect(() => {
         if (!incDate) return;
@@ -45,44 +45,50 @@ const CompanyDashboard = () => {
         let hmrcDeadlines = [];
         if (tradingDate) {
             const start = dayjs(tradingDate);
-            const yearEnd = start.add(1, 'year').subtract(1, 'day');
-            hmrcDeadlines = [
-                {
+            let yearEnd = firstYear
+                ? start.add(1, 'year').subtract(1, 'day')
+                : start.add(2, 'year').subtract(1, 'day');
+
+            // First year: add registration
+            if (firstYear) {
+                hmrcDeadlines.push({
                     id: 'hmrc_reg',
-                    title: "Register for Corp Tax",
+                    title: "Register for Corporation Tax",
                     date: start.add(3, 'months'),
                     desc: "Notify HMRC that the company is active.",
                     issuer: "HMRC",
                     link: "https://www.gov.uk/limited-company-formation/add-corporation-tax-services-to-business-tax-account"
+                });
+            }
+
+            // CT600 submission and tax payment (always)
+            hmrcDeadlines.push(
+                {
+                    id: 'hmrc_ct600',
+                    title: "Submit CT600 (Company Tax Return)",
+                    date: yearEnd.add(12, 'months'),
+                    desc: "File your Company Tax Return with HMRC.",
+                    issuer: "HMRC",
+                    link: "https://www.gov.uk/file-your-company-accounts-and-tax-return"
                 },
                 {
                     id: 'hmrc_pay',
                     title: "Corporation Tax Payment",
                     date: yearEnd.add(9, 'months').add(1, 'day'),
-                    desc: "Payment deadline for the first period.",
+                    desc: "Payment deadline for corporation tax on profits.",
                     issuer: "HMRC",
                     link: "https://www.gov.uk/pay-corporation-tax"
-                },
-                {
-                    id: 'hmrc_file',
-                    title: "Corporation Tax Filling",
-                    date: yearEnd.add(12, 'months'),
-                    desc: "Filing deadline for the first period.",
-                    issuer: "HMRC",
-                    link: "https://www.gov.uk/file-your-company-accounts-and-tax-return"
-                },
-            ];
+                }
+            );
         }
+
         setDeadlines([...chDeadlines, ...hmrcDeadlines]);
-    }, [incDate, tradingDate]);
+    }, [incDate, tradingDate, firstYear]);
 
     const getStatus = (dueDate) => {
         const daysDiff = dueDate.diff(dayjs(), 'day');
-        // RED: Overdue or within 30 days
         if (daysDiff <= 30) return { color: '#ff4d4f', label: daysDiff < 0 ? 'OVERDUE' : 'DUE SOON', icon: '⚠️' };
-        // AMBER: Within 90 days
         if (daysDiff <= 90) return { color: '#faad14', label: 'APPROACHING', icon: '⏳' };
-        // BLUE: Safe (No icon, no label)
         return { color: '#1890ff', label: '', icon: '' };
     };
 
@@ -143,6 +149,16 @@ const CompanyDashboard = () => {
                 <div>
                     <label style={{ fontWeight: '600', fontSize: '0.9rem', display: 'block', marginBottom: '5px' }}>Trading Start Date</label>
                     <input type="date" value={tradingDate} onChange={(e) => setTradingDate(e.target.value)} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}>
+                        <input
+                            type="checkbox"
+                            checked={firstYear}
+                            onChange={() => setFirstYear(!firstYear)}
+                        />
+                        First Year of Trading
+                    </label>
                 </div>
             </div>
 
