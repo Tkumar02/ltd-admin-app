@@ -102,7 +102,7 @@ const CompanyScreen = () => {
 
 
     return (
-        <div className="p-8 max-w-3xl mx-auto">
+        <div className="p-8 max-w-3xl mx-auto text-gray-900 dark:text-gray-100">
             {/* Buttons */}
             <div className="flex gap-4 mb-6">
                 <button
@@ -131,7 +131,7 @@ const CompanyScreen = () => {
             {/* Add Company Form */}
             {showAddForm && (
                 <form
-                    className="bg-white shadow-md rounded p-6 space-y-4"
+                    className="bg-white dark:bg-gray-800 shadow-md rounded p-6 space-y-4"
                     onSubmit={handleAddCompany}
                 >
                     <h3 className="text-lg font-semibold">Add New Company</h3>
@@ -139,7 +139,11 @@ const CompanyScreen = () => {
                     <div>
                         <label className="block text-sm font-medium">Company Name</label>
                         <input
-                            className="mt-1 block w-full border rounded px-3 py-2"
+                            className="mt-1 block w-full rounded px-3 py-2
+           bg-white dark:bg-gray-900
+           border border-gray-300 dark:border-gray-700
+           text-gray-900 dark:text-gray-100"
+
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
@@ -206,10 +210,12 @@ const CompanyScreen = () => {
                             {companies.map(company => (
                                 <li
                                     key={company.id}
-                                    className="p-4 bg-gray-50 rounded shadow hover:shadow-md transition items-start"
+className="p-4 rounded shadow hover:shadow-md transition
+           bg-gray-50 dark:bg-gray-800
+           border border-gray-200 dark:border-gray-700"
                                 >
                                     <div>
-                                        <h4 className="font-semibold text-lg">{company.name}</h4>
+                                        <h4 className="font-semibold text-lg text-gray-900 dark:text-gray-100">{company.name}</h4>
                                         <p><strong>Number:</strong> {company.number}</p>
                                         {/* <p><strong>Incorporation Date</strong> <br/> {company.incorporationDate}</p>
                                         <p><strong>Accounting Start Date</strong> <br/> {company.accountingStart}</p> */}

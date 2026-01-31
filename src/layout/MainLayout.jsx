@@ -59,7 +59,9 @@ export default function MainLayout() {
             </aside>
 
             {/* Main content */}
-            <main className="flex-1 p-6 md:p-10 bg-gray-100">
+<main className="flex-1 p-6 md:p-10 
+                 bg-gray-100 dark:bg-gray-700 
+                 text-gray-900 dark:text-gray-100">
                 <Outlet />
             </main>
         </div>
