@@ -14,3 +14,16 @@ to deploy:
 
 npm run build
 firebase deploy --only hosting:ltd-admin-app
+
+if company was incorporated on 1st jan 2024
+Requirement,Period Covered,Filing Deadline
+Confirmation Statement,N/A,15 Jan 2025
+Annual Accounts,01/01/24 - 31/01/25,01 Oct 2025
+Corp. Tax Payment,01/01/24 - 31/01/25,01 Nov 2025
+Corp. Tax Return,01/01/24 - 31/01/25,31 Jan 2026
+
+Requirement,          Year 1 Deadline,          Year 2 Deadline,        Logic Change
+Confirmation Stmt,    15 Jan 2025,              15 Jan 2026,            Same every year
+Annual Accounts,      01 Oct 2025,              31 Oct 2026,            Dropped from 21m to 9m
+Tax Payment,          01 Nov 2025,              01 Nov 2026,            9m + 1 day after YE
+Tax Return,           31 Jan 2026,              31 Jan 2027,            12m after YE
