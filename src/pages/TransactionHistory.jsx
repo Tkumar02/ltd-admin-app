@@ -10,31 +10,98 @@ const TransactionHistory = () => {
     const navigate = useNavigate();
     const [ledger, setLedger] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [showAllHistory, setShowAllHistory] = useState(false);
+    // FIX 1: Store periods in state so the UI can access periods[0]
+    const [periods, setPeriods] = useState([]);
+    const [companyName, setCompanyName] = useState("");
+
+    // Accounting Period Logic
+    const getPeriods = (company) => {
+        if (!company) return [];
+        let ard = company.nextAccountsDate ? dayjs(company.nextAccountsDate) : dayjs(company.incorporationDate).add(1, 'year');
+        while (dayjs().isAfter(ard)) { ard = ard.add(1, 'year'); }
+        const periodsArr = [];
+        let i = 0;
+        let keepGoing = true;
+        const incDate = dayjs(company.incorporationDate);
+        while (keepGoing) {
+            const end = ard.subtract(i, 'year');
+            let start = end.subtract(1, 'year').add(1, 'day');
+            if (start.isBefore(incDate)) { start = incDate; keepGoing = false; }
+            if (end.diff(start, 'day') < 2) break;
+            if (end.isBefore(incDate)) break;
+            periodsArr.push({
+                label: `${start.format('YYYY')}-${end.format('YY')}`,
+                start, end,
+                display: `${start.format('D MMM YYYY')} - ${end.format('D MMM YYYY')}`
+            });
+            i++;
+            if (i > 50) break;
+        }
+        return periodsArr;
+    };
 
     useEffect(() => {
         if (!companyId) return;
+        const companyRef = doc(db, "companies", companyId);
+        
+        const unsubAll = onSnapshot(companyRef, (companySnap) => {
+            if (!companySnap.exists()) return;
+            const companyData = companySnap.data();
+            const companyName = companyData.name;
+            setCompanyName(companyData.name);
 
-        const qExpenses = query(collection(db, "companies", companyId, "transactions"), orderBy("date", "desc"));
-        const qIncome = query(collection(db, "companies", companyId, "other_revenue"), orderBy("date", "desc"));
+            const calculatedPeriods = getPeriods(companyData);
+            setPeriods(calculatedPeriods); // Save to state
+            
+            const currentPeriodStart = calculatedPeriods.length > 0 ? calculatedPeriods[0].start : dayjs().startOf('year');
 
-        const unsubExpenses = onSnapshot(qExpenses, (expSnap) => {
-            const expenseData = expSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), entryType: 'EXPENSE' }));
-            const unsubIncome = onSnapshot(qIncome, (incSnap) => {
-                const incomeData = incSnap.docs.map(doc => ({ 
-                    id: doc.id, 
-                    ...doc.data(), 
-                    entryType: 'INCOME',
-                    payee: doc.data().source || doc.data().payee 
+            const qExpenses = query(collection(db, "companies", companyId, "transactions"), orderBy("date", "desc"));
+            const qOtherRev = query(collection(db, "companies", companyId, "other_revenue"), orderBy("date", "desc"));
+            const qInvoices = query(collection(db, "invoices"), orderBy("date", "desc"));
+
+            const unsubExp = onSnapshot(qExpenses, (expSnap) => {
+                const expenseData = expSnap.docs.map(doc => ({ 
+                    id: doc.id, ...doc.data(), entryType: 'EXPENSE',
+                    displaySubtype: doc.data().category || 'Expense' 
                 }));
 
-                const combined = [...expenseData, ...incomeData].sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix());
-                setLedger(combined);
-                setLoading(false);
+                const unsubOther = onSnapshot(qOtherRev, (revSnap) => {
+                    const otherRevData = revSnap.docs.map(doc => ({ 
+                        id: doc.id, ...doc.data(), entryType: 'INCOME',
+                        payee: doc.data().source || doc.data().payee,
+                        displaySubtype: doc.data().category || 'Other Revenue'
+                    }));
+
+                    const unsubInv = onSnapshot(qInvoices, (invSnap) => {
+                        const invoiceData = invSnap.docs
+                            .map(doc => ({ id: doc.id, ...doc.data() }))
+                            .filter(inv => inv.businessName === companyName && inv.paid === true)
+                            .map(inv => ({
+                                id: inv.id, ...inv, entryType: 'INCOME',
+                                payee: inv.clientName, amount: inv.total, displaySubtype: 'Invoice'
+                            }));
+
+                        let combined = [...expenseData, ...otherRevData, ...invoiceData];
+
+                        if (!showAllHistory) {
+                            combined = combined.filter(item => {
+                                const itemDate = dayjs(item.date);
+                                return itemDate.isSame(currentPeriodStart, 'day') || itemDate.isAfter(currentPeriodStart, 'day');
+                            });
+                        }
+
+                        setLedger(combined.sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix()));
+                        setLoading(false);
+                    });
+                    return () => unsubInv();
+                });
+                return () => unsubOther();
             });
-            return () => unsubIncome();
+            return () => unsubExp();
         });
-        return () => unsubExpenses();
-    }, [companyId]);
+        return () => unsubAll();
+    }, [companyId, showAllHistory]);
 
     const handleDelete = async (id, type) => {
         const collectionName = type === 'INCOME' ? "other_revenue" : "transactions";
@@ -54,7 +121,30 @@ const TransactionHistory = () => {
                 <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                     <div>
                         <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic">Ledger</h1>
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-indigo-400/80 mt-2">Unified Transaction History</p>
+                        <p>{companyName}</p>
+                        <div className="flex items-center gap-4 mt-2">
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-indigo-400/80">Unified History</p>
+                            {/* NEW: Toggle UI Buttons */}
+                            <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
+                                <button 
+                                    onClick={() => setShowAllHistory(false)}
+                                    className={`px-3 py-1 text-[9px] font-black uppercase rounded ${!showAllHistory ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow' : 'text-slate-500'}`}
+                                >
+                                    Current
+                                </button>
+                                <button 
+                                    onClick={() => setShowAllHistory(true)}
+                                    className={`px-3 py-1 text-[9px] font-black uppercase rounded ${showAllHistory ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow' : 'text-slate-500'}`}
+                                >
+                                    All Time
+                                </button>
+                            </div>
+                        </div>
+                        {!showAllHistory && periods[0] && (
+                            <p className="text-[9px] font-bold text-emerald-500 dark:text-emerald-400 mt-2">
+                                Period: {periods[0].display}
+                            </p>
+                        )}
                     </div>
                     
                     <div className="flex w-full md:w-auto gap-3">
@@ -78,13 +168,11 @@ const TransactionHistory = () => {
                                 {ledger.map((item) => {
                                     const isIncome = item.entryType === 'INCOME';
                                     return (
-                                        /* ROW BACKGROUNDS: Red/Green tinted based on entry type */
                                         <tr key={item.id} className={`transition-colors ${
                                             isIncome 
                                             ? 'bg-emerald-50/40 dark:bg-emerald-500/5 hover:bg-emerald-100/60 dark:hover:bg-emerald-500/10' 
                                             : 'bg-rose-50/40 dark:bg-rose-500/5 hover:bg-rose-100/60 dark:hover:bg-rose-500/10'
                                         }`}>
-                                            {/* Date & Payee */}
                                             <td className="p-4 md:p-6">
                                                 <div className="flex flex-col">
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
@@ -96,44 +184,28 @@ const TransactionHistory = () => {
                                                     <span className="text-[9px] font-bold text-slate-400 uppercase">{item.category}</span>
                                                 </div>
                                             </td>
-
-                                            {/* Notes: Responsive hiding */}
                                             <td className="p-4 md:p-6 hidden md:table-cell">
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 italic max-w-xs truncate">
                                                     {item.notes || item.description || "—"}
                                                 </p>
                                             </td>
-
-                                            {/* Amount with Directional Color */}
                                             <td className="p-4 md:p-6 text-right">
                                                 <div className="flex flex-col items-end">
                                                     <span className={`font-black text-sm md:text-lg ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                                         {isIncome ? "+" : "-"} £{Number(item.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     </span>
-                                                    <span className="text-[8px] font-black uppercase opacity-60 dark:text-white">
-                                                        {isIncome ? 'Revenue' : 'Expense'}
+                                                    <span className="text-[8px] font-black uppercase tracking-widest opacity-60 dark:text-white px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 mt-1">
+                                                        {item.displaySubtype}
                                                     </span>
                                                 </div>
                                             </td>
-
-                                            {/* Edit/Delete Buttons */}
                                             <td className="p-4 md:p-6 text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    <button 
-                                                        onClick={() => navigate(`/${isIncome ? 'edit-revenue' : 'edit-expense'}/${companyId}/${item.id}`)}
-                                                        className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-slate-400 hover:text-indigo-500 transition-all border border-slate-200 dark:border-slate-700"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                        </svg>
+                                                    <button onClick={() => navigate(`/${isIncome ? 'edit-revenue' : 'edit-expense'}/${companyId}/${item.id}`)} className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:text-indigo-500">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                                     </button>
-                                                    <button 
-                                                        onClick={() => handleDelete(item.id, item.entryType)}
-                                                        className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-slate-400 hover:text-rose-600 transition-all border border-slate-200 dark:border-slate-700"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
+                                                    <button onClick={() => handleDelete(item.id, item.entryType)} className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:text-rose-600">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                     </button>
                                                 </div>
                                             </td>
@@ -143,11 +215,6 @@ const TransactionHistory = () => {
                             </tbody>
                         </table>
                     </div>
-                    {ledger.length === 0 && (
-                        <div className="p-20 text-center">
-                            <p className="text-slate-400 font-black uppercase tracking-widest text-xs">No transactions recorded for this period</p>
-                        </div>
-                    )}
                 </div>
             </div>
             <ToastContainer theme="dark" position="bottom-center" />

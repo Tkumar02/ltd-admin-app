@@ -1,6 +1,7 @@
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { useState, useEffect, createContext, useContext } from "react";
 import { app } from "./firebaseConfig";
+import { sendPasswordResetEmail } from "firebase/auth";
 
 export const auth = getAuth(app);
 
@@ -61,4 +62,8 @@ export const logout = async () => {
     } catch (error) {
         console.error("Logout error:", error);
     }
+};
+
+export const resetPassword = (email) => {
+    return sendPasswordResetEmail(auth, email);
 };

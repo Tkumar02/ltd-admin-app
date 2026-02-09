@@ -2,37 +2,57 @@ import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import { useNavigate } from "react-router-dom";
-import { collection, query, onSnapshot } from "firebase/firestore";
+import { collection, query, onSnapshot, where } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import getCompaniesByEmail from "../utils/getCompaniesByEmail";
 import useCurrentUser from "../utils/getCurrentUser";
 
 dayjs.extend(isBetween);
 
-// --- SUB-COMPONENT: LIVE P&L CALCULATOR ---
+// --- UPDATED SUB-COMPONENT: LIVE P&L CALCULATOR INCLUDING INVOICES ---
 const CompanyLiveStats = ({ company, period }) => {
     const [stats, setStats] = useState({ profit: 0, loading: true });
 
     useEffect(() => {
         if (!company || !period) return;
 
-        // Listen to Expenses & Revenue sub-collections
+        // 1. Queries for Company-specific sub-collections
         const qExp = query(collection(db, "companies", company.id, "transactions"));
         const qRev = query(collection(db, "companies", company.id, "other_revenue"));
+        
+        // 2. Query for Top-level Invoices
+        // We listen to all invoices and filter by businessName and paid status in the snapshot
+        const qInv = query(collection(db, "invoices"), where("paid", "==", true));
 
         const unsubExp = onSnapshot(qExp, (expSnap) => {
             const unsubRev = onSnapshot(qRev, (revSnap) => {
-                const totalExp = expSnap.docs
-                    .map(d => d.data())
-                    .filter(d => dayjs(d.date).isBetween(period.start, period.end, null, '[]'))
-                    .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+                const unsubInv = onSnapshot(qInv, (invSnap) => {
+                    
+                    // Calculate Total Expenses
+                    const totalExp = expSnap.docs
+                        .map(d => d.data())
+                        .filter(d => dayjs(d.date).isBetween(period.start, period.end, null, '[]'))
+                        .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-                const totalRev = revSnap.docs
-                    .map(d => d.data())
-                    .filter(d => dayjs(d.date).isBetween(period.start, period.end, null, '[]'))
-                    .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+                    // Calculate "Other" Revenue (DLA, Grants, etc.)
+                    const totalOtherRev = revSnap.docs
+                        .map(d => d.data())
+                        .filter(d => dayjs(d.date).isBetween(period.start, period.end, null, '[]'))
+                        .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-                setStats({ profit: totalRev - totalExp, loading: false });
+                    // Calculate Paid Invoices Revenue
+                    const totalInvRev = invSnap.docs
+                        .map(d => d.data())
+                        // Match businessName to company.name and check date range
+                        .filter(d => d.businessName === company.name && dayjs(d.date).isBetween(period.start, period.end, null, '[]'))
+                        .reduce((sum, d) => sum + (Number(d.total) || 0), 0);
+
+                    setStats({ 
+                        profit: (totalOtherRev + totalInvRev) - totalExp, 
+                        loading: false 
+                    });
+                });
+                return () => unsubInv();
             });
             return () => unsubRev();
         });
@@ -56,6 +76,8 @@ const CompanyLiveStats = ({ company, period }) => {
     );
 };
 
+// --- REMAINDER OF DASHBOARD COMPONENT (STYLING UNCHANGED) ---
+
 const Dashboard = () => {
     const navigate = useNavigate();
     const user = useCurrentUser();
@@ -73,14 +95,13 @@ const Dashboard = () => {
         fetchAllData();
     }, [user]);
 
-    // Same period logic as Revenue/Ledger pages
     const getPeriods = (company) => {
         if (!company) return [];
         let ard = company.nextAccountsDate ? dayjs(company.nextAccountsDate) : dayjs(company.incorporationDate).add(1, 'year');
         while (dayjs().isAfter(ard)) { ard = ard.add(1, 'year'); }
         const end = ard;
         const start = end.subtract(1, 'year').add(1, 'day');
-        return [{ start, end }]; // Return current period for stats
+        return [{ start, end }];
     };
 
     const getCompanySummary = (company) => {
@@ -119,13 +140,11 @@ const Dashboard = () => {
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F1A] p-4 md:p-10 transition-colors duration-500">
             <div className="max-w-6xl mx-auto">
-                
                 <header className="mb-12">
                     <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter italic uppercase">Portfolio</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">Companies Snapshot</p>
                 </header>
 
-                {/* --- ACTION REQUIRED SECTION --- */}
                 <section className="mb-16">
                     <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 mb-6">Critical Alerts</h2>
                     {urgentCompanies.length > 0 ? (
@@ -133,12 +152,8 @@ const Dashboard = () => {
                             {urgentCompanies.map(company => {
                                 const summary = getCompanySummary(company);
                                 return (
-                                    <div key={company.id} 
-                                         onClick={() => navigate(`/filings/${company.id}`)}
-                                         className={`group p-8 rounded-[2.5rem] border-2 cursor-pointer transition-all hover:shadow-2xl hover:-translate-y-2 ${summary.status.style}`}>
-                                        <span className="text-[10px] font-black px-3 py-1 rounded-full border border-current uppercase tracking-tighter mb-4 inline-block">
-                                            {summary.status.label}
-                                        </span>
+                                    <div key={company.id} onClick={() => navigate(`/filings/${company.id}`)} className={`group p-8 rounded-[2.5rem] border-2 cursor-pointer transition-all hover:shadow-2xl hover:-translate-y-2 ${summary.status.style}`}>
+                                        <span className="text-[10px] font-black px-3 py-1 rounded-full border border-current uppercase tracking-tighter mb-4 inline-block">{summary.status.label}</span>
                                         <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1 truncate">{company.name}</h3>
                                         <p className="text-[10px] font-bold opacity-60 mb-8 uppercase">Deadline: {summary.accountsDeadline.format("D MMM YYYY")}</p>
                                         <div className="py-4 px-6 bg-white/50 dark:bg-black/30 rounded-3xl text-center shadow-inner">
@@ -159,7 +174,6 @@ const Dashboard = () => {
                     )}
                 </section>
 
-                {/* --- PORTFOLIO TABLE SECTION --- */}
                 <section>
                     <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 mb-6">Company Performance</h2>
                     <div className="bg-white dark:bg-[#121826] rounded-[3rem] shadow-2xl shadow-black/5 border border-slate-100 dark:border-slate-800 overflow-hidden">
@@ -199,7 +213,7 @@ const Dashboard = () => {
                                                             title="Ledger"
                                                         >
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                                                             </svg>
                                                         </button>
                                                         <button 
@@ -208,7 +222,7 @@ const Dashboard = () => {
                                                             title="Filings"
                                                         >
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                             </svg>
                                                         </button>
                                                     </div>
