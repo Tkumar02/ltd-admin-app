@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* font-family: system-ui, Avenir, Helvetica, Arial, sans-serif; */
   line-height: 1.5;
   font-weight: 400;
   width: 100vw;
@@ -14,6 +14,9 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+h1, span, p, a {
+  font-family: 'Playfair Display', serif !important;
+}
 
 /* a {
   font-weight: 500;

@@ -14,6 +14,8 @@ import RecordFiling from "./pages/RecordFiling";
 import RecordExpense from "./pages/RecordExpense";
 import TransactionHistory from "./pages/TransactionHistory";
 import RevenueHistory from "./pages/RevenueHistory";
+import RecordRevenue from "./pages/RecordRevenue";
+import ExpenseLedger from "./pages/ExpenseLedger";
 
 export default function App() {
   return (
@@ -46,6 +48,9 @@ export default function App() {
         <Route path="/transactions/:companyId" element={<TransactionHistory />} />
         <Route path="/edit-expense/:companyId/:transactionId" element={<RecordExpense />} />
         <Route path='/revenue-history' element={<RevenueHistory/>} />
+        <Route path='/record-revenue' element={<RecordRevenue/>} />
+        <Route path="/record-revenue/:companyId" element={<RecordRevenue />} />
+        <Route path='/expense-history' element={<ExpenseLedger/>} />  
 
         {/* Fallback */}
         <Route path="dashboard" element={<Navigate to="/dashboard" replace />} />

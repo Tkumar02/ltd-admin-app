@@ -133,7 +133,7 @@ const RecordExpense = () => {
                     
                     {!companyId && (
                         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800/50">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Target Entity</label>
+                            <label className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Target Company</label>
                             <select 
                                 className="w-full mt-2 p-3 rounded-xl bg-white dark:bg-gray-800 font-bold outline-none border-2 border-transparent focus:border-blue-500"
                                 value={selectedCompanyId}
