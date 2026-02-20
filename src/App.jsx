@@ -47,6 +47,7 @@ export default function App() {
         <Route path="/record-expense" element={<RecordExpense />} />
         <Route path="/transactions/:companyId" element={<TransactionHistory />} />
         <Route path="/edit-expense/:companyId/:transactionId" element={<RecordExpense />} />
+        <Route path="/edit-revenue/:companyId/:transactionId" element={<RecordRevenue />} />
         <Route path='/revenue-history' element={<RevenueHistory/>} />
         <Route path='/record-revenue' element={<RecordRevenue/>} />
         <Route path="/record-revenue/:companyId" element={<RecordRevenue />} />

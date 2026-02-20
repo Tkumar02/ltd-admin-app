@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase/firebaseConfig';
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import {
+arrayUnion,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+  updateDoc,
+  setDoc
+} from "firebase/firestore";
 import { ToastContainer, toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -64,30 +75,98 @@ const CompanyScreen = () => {
         }
     };
 
-    const handleSave = async (e) => {
-        e.preventDefault();
-        try {
-            const companyData = {
-                name, number, address, incorporationDate,
-                accountingStart: accountingStart || null,
-                lastAccountsDate: isOldCompany ? lastAccountsDate : null,
-                isFirstYear: !isOldCompany,
-                email: auth.currentUser.email
-            };
+const syncCompanyToProfile = async (companyId, companyData) => {
+  const profilesRef = collection(db, "profiles");
+  const q = query(profilesRef, where("email", "==", companyData.email));
+  const snap = await getDocs(q);
 
-            if (view === 'edit') {
-                await updateDoc(doc(db, "companies", selectedId), companyData);
-                toast.success('Updated');
-            } else {
-                await addDoc(collection(db, "companies"), companyData);
-                toast.success('Added');
-            }
-            resetForm();
-            fetchCompanies();
-        } catch (error) {
-            toast.error("Save error.");
-        }
+  const businessEntry = {
+    businessName: companyData.name,
+    businessAddress: companyData.address,
+    businessType: "Ltd Company",
+    companyId: companyId, 
+    updatedAt: new Date()
+  };
+
+  if (!snap.empty) {
+    const profileDoc = snap.docs[0];
+    const profileData = profileDoc.data();
+    let currentBusinesses = profileData.businesses || [];
+
+    // 1. TRY TO MATCH BY ID (Primary)
+    let index = currentBusinesses.findIndex(b => b.companyId === companyId);
+
+    // 2. FALLBACK: MATCH BY NAME (For legacy records without IDs)
+    if (index === -1) {
+        index = currentBusinesses.findIndex(b => 
+            b.businessName === companyData.name && !b.companyId
+        );
+    }
+
+    if (index !== -1) {
+        // Update existing record (replaces old legacy record with the new ID-enabled one)
+        currentBusinesses[index] = businessEntry;
+    } else {
+        // Brand new company
+        currentBusinesses.push(businessEntry);
+    }
+
+    await updateDoc(profileDoc.ref, { businesses: currentBusinesses });
+
+  } else {
+    await addDoc(profilesRef, {
+      email: companyData.email,
+      businesses: [businessEntry]
+    });
+  }
+};
+
+
+const handleSave = async (e) => {
+  e.preventDefault();
+
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("User not logged in");
+
+    // Prepare the company data
+    const companyData = {
+      name,
+      number,
+      address,
+      incorporationDate,
+      accountingStart: accountingStart || null,
+      lastAccountsDate: isOldCompany ? lastAccountsDate : null,
+      isFirstYear: !isOldCompany,
+      email: user.email
     };
+
+    let companyRef;
+
+    if (view === 'edit') {
+    companyRef = doc(db, "companies", selectedId);
+    await updateDoc(companyRef, companyData);
+    // ✅ Added this so edits sync back to the Profile
+    await syncCompanyToProfile(selectedId, companyData); 
+    toast.success("Company updated");
+    } else {
+      // Add new company
+      companyRef = await addDoc(collection(db, "companies"), companyData);
+      toast.success("Company added");
+
+      // 🔹 Sync to profiles.businesses safely
+      await syncCompanyToProfile(companyRef.id, companyData);
+    }
+
+    // Reset form and refresh list
+    resetForm();
+    fetchCompanies();
+  } catch (error) {
+    console.error(error);
+    toast.error("Save error.");
+  }
+};
+
 
     return (
         /* THE NEW THEMED BACKGROUND */

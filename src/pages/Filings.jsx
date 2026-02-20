@@ -73,7 +73,7 @@ const Filings = () => {
                 deadline: confDeadline,
                 windowOpens: confDeadline.subtract(14, 'days'),
                 desc: "Annual check of officers and persons of significant control.",
-                govLink: "https://www.gov.uk/file-your-confirmation-statement"
+                govLink: "https://www.gov.uk/file-your-confirmation-statement-with-companies-house"
             },
             {
                 title: "Annual Accounts",
@@ -150,41 +150,61 @@ const Filings = () => {
                 <div className="grid gap-6 md:grid-cols-2">
                     {deadlines.map((item, idx) => {
                         const status = getStatus(item.deadline, item.windowOpens);
+                        const today = dayjs();
+                        const daysRemaining = item.deadline.diff(today, "day");
+
                         return (
-                            <div key={idx} className={`relative p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}>
-                                <div className="mb-8">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current">
-                                            {status.label}
-                                        </span>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">{item.title}</h3>
-                                    <p className="text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
-                                        {item.deadline.format("DD MMM YYYY")}
-                                    </p>
-                                    <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
-                                        {item.desc}
-                                    </p>
+                            <div key={idx} className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}>
+                                <div className="mb-6">
+                                
+                            {/* 1. Header Row: Stacked on mobile, side-by-side on desktop */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+                                {/* Status Label (Always shows) */}
+                                <div className="w-fit">
+                                    <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
+                                        {status.label}
+                                    </span>
                                 </div>
 
-                                <div className="flex items-center gap-3 pt-6 border-t border-black/5 dark:border-white/5">
-                                    <button 
-                                        className="flex-1 py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
-                                        onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}`)}
-                                    >
-                                        Log Submission
-                                    </button>
-                                    <a 
-                                        href={item.govLink} 
-                                        target="_blank" 
-                                        rel="noreferrer"
-                                        className="px-5 py-3.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 rounded-2xl font-bold text-xs transition"
-                                    >
-                                        Gov.uk ↗
-                                    </a>
+                                {/* Countdown - ONLY shows if NOT "IN PROGRESS" */}
+                                {status.label !== "IN PROGRESS" && (
+                                    <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right animate__animated animate__fadeIn">
+                                        {daysRemaining < 0 
+                                            ? `${Math.abs(daysRemaining)} days overdue` 
+                                            : `${daysRemaining} days left`}
+                                    </span>
+                                )}
+                            </div>
+
+                                {/* 2. Content Section */}
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">{item.title}</h3>
+                                <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
+                                    {item.deadline.format("DD MMM YYYY")}
+                                </p>
+                                <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
+                                    {item.desc}
+                                </p>
+                                </div>
+
+                                {/* 3. Button Section (Forced stack for narrow screens) */}
+                                <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
+                                <button 
+                                    className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
+                                    onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}`)}
+                                >
+                                    Log Submission
+                                </button>
+                                <a 
+                                    href={item.govLink} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 rounded-2xl font-bold text-xs transition text-center flex items-center justify-center whitespace-nowrap"
+                                >
+                                    Gov.uk ↗
+                                </a>
                                 </div>
                             </div>
-                        );
+                            );
                     })}
                 </div>
                 
