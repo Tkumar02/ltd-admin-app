@@ -1,22 +1,23 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { db } from "../firebase/firebaseConfig";
-import {
-  collection,
-  addDoc,
-  doc,
-  updateDoc,
-  getDocs,
-  query,
-  where,
-  getDoc,
-  orderBy,
-  limit,
-} from "firebase/firestore";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
+import { db } from "../firebase/firebaseConfig";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 dayjs.extend(isBetween);
 
@@ -57,73 +58,99 @@ const RecordFiling = () => {
     sharesChange: "",
     certificateRef: "",
     notes: "",
+
+    // Register of Directors
+    directorEffectiveDate: dayjs().format("YYYY-MM-DD"),
+    directorChangeType: "APPOINT", // APPOINT | RESIGN | CHANGE_DETAILS
+    directorName: "",
+    directorServiceAddress: "",
+    directorNationality: "",
+    directorCountryOfResidence: "",
+    directorOccupation: "",
+    directorDob: "",
+    directorNotes: "",
   });
 
-  const updateField = (field, value) =>
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
 
-  // --- AUTO-CALCULATION LOGIC ---
+  const showAccounts = filingType?.includes("Accounts") || filingType?.includes("Tax Return");
+  const showTaxReturn = filingType?.includes("Tax Return");
+  const showConfirmation = filingType?.includes("Confirmation");
+  const showPayment = filingType?.includes("Payment");
+  const showRegisterMembers = filingType?.includes("Register of Members");
+  const showRegisterDirectors = filingType?.includes("Register of Directors");
+
+  // ---------- Auto-fill helpers ----------
   useEffect(() => {
-    const fetchAndCalculate = async () => {
+    const run = async () => {
       if (!companyId || !filingType) return;
 
       setCalculating(true);
-
       try {
         const companyRef = doc(db, "companies", companyId);
         const companySnap = await getDoc(companyRef);
         if (!companySnap.exists()) return;
         const company = companySnap.data();
 
-        // ===== PATH A: FINANCIAL FILINGS (Accounts / Tax Return) =====
-        if (filingType.includes("Accounts") || filingType.includes("Tax Return")) {
+        // ===== A) Financial filings (Accounts / Tax Return) =====
+        if (showAccounts) {
           const anchor = company.lastAccountsPeriodEnd || company.incorporationDate;
           const anchorDate = dayjs(anchor);
 
-          const end = anchorDate.add(1, "year");
-          const start = anchorDate.add(1, "day");
+          const periodEnd = anchorDate.add(1, "year");
+          const periodStart = anchorDate.add(1, "day");
 
           setFormData((prev) => ({
             ...prev,
-            periodStart: start.format("YYYY-MM-DD"),
-            periodEnd: end.format("YYYY-MM-DD"),
+            periodStart: periodStart.format("YYYY-MM-DD"),
+            periodEnd: periodEnd.format("YYYY-MM-DD"),
           }));
 
-          // Expenses (company subcollection)
+          // Expenses
           const expSnap = await getDocs(collection(db, "companies", companyId, "transactions"));
           const totalExp = expSnap.docs
             .map((d) => d.data())
-            .filter((d) => d?.date && dayjs(d.date).isBetween(start, end, null, "[]"))
+            .filter((d) => d?.date && dayjs(d.date).isBetween(periodStart, periodEnd, null, "[]"))
             .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-          // Paid invoices (top-level, filtered by businessName to preserve your existing logic)
+          // Paid invoices (top-level)
           const invSnap = await getDocs(query(collection(db, "invoices"), where("paid", "==", true)));
-          const totalRev = invSnap.docs
+          const totalInvRev = invSnap.docs
             .map((d) => d.data())
             .filter(
               (d) =>
                 d?.businessName === company.name &&
                 d?.date &&
-                dayjs(d.date).isBetween(start, end, null, "[]")
+                dayjs(d.date).isBetween(periodStart, periodEnd, null, "[]")
             )
             .reduce((sum, d) => sum + (Number(d.total) || 0), 0);
 
+          // Manual “other revenue” in the company subcollection
+          const otherSnap = await getDocs(collection(db, "companies", companyId, "other_revenue"));
+          const totalOtherRev = otherSnap.docs
+            .map((d) => d.data())
+            .filter((d) => d?.date && dayjs(d.date).isBetween(periodStart, periodEnd, null, "[]"))
+            .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+
+          const turnover = totalInvRev + totalOtherRev;
+          const profit = turnover - totalExp;
+
           setFormData((prev) => ({
             ...prev,
-            turnover: totalRev.toFixed(2),
-            profit: (totalRev - totalExp).toFixed(2),
+            turnover: Number(turnover).toFixed(2),
+            profit: Number(profit).toFixed(2),
           }));
 
           if (!hasToasted.current) {
             toast.info(
-              `Ledger synced for period ${start.format("DD MMM YYYY")} → ${end.format("DD MMM YYYY")}`
+              `Ledger synced for period ${periodStart.format("DD MMM YYYY")} → ${periodEnd.format("DD MMM YYYY")}`
             );
             hasToasted.current = true;
           }
         }
 
-        // ===== PATH B: CONFIRMATION STATEMENT (carry forward) =====
-        if (filingType.includes("Confirmation")) {
+        // ===== B) Confirmation Statement carry-forward =====
+        if (showConfirmation) {
           const historyRef = collection(db, "companies", companyId, "filingHistory");
           const q1 = query(
             historyRef,
@@ -149,21 +176,22 @@ const RecordFiling = () => {
             }
           }
         }
-      } catch (err) {
-        console.error("Fetch Error:", err);
+      } catch (e) {
+        console.error(e);
         toast.error("Error auto-filling form details.");
       } finally {
         setCalculating(false);
       }
     };
 
-    fetchAndCalculate();
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, filingType]);
 
-  // Smart Estimator Logic
+  // ---------- Tax estimator ----------
   const estimateTax = () => {
     const profit = parseFloat(formData.profit);
-    if (isNaN(profit) || profit <= 0) {
+    if (!Number.isFinite(profit) || profit <= 0) {
       toast.warning("Enter a positive profit to estimate tax.");
       return;
     }
@@ -188,7 +216,8 @@ const RecordFiling = () => {
     toast.success(`Estimated at ${effectiveRate}`, { icon: "⚖️" });
   };
 
-  const validateRegister = () => {
+  // ---------- Validators ----------
+  const validateRegisterMembers = () => {
     if (!formData.effectiveDate) return "Effective date is required.";
     if (!formData.changeType) return "Change type is required.";
     if (!formData.toMemberName?.trim()) return "Member name is required.";
@@ -201,61 +230,99 @@ const RecordFiling = () => {
     return null;
   };
 
+  const validateRegisterDirectors = () => {
+    if (!formData.directorEffectiveDate) return "Effective date is required.";
+    if (!formData.directorChangeType) return "Change type is required.";
+    if (!formData.directorName?.trim()) return "Director name is required.";
+    return null;
+  };
+
+  // ---------- Submission details (minimal, per type) ----------
   const buildSubmissionDetails = () => {
-  if (showConfirmation) {
-    return {
-      directors: formData.directors,
-      sicCode: formData.sicCode,
-      shareCapital: formData.shareCapital,
-      shareholders: formData.shareholders,
-    };
-  }
+    if (showConfirmation) {
+      return {
+        directors: formData.directors,
+        sicCode: formData.sicCode,
+        shareCapital: formData.shareCapital,
+        shareholders: formData.shareholders,
+      };
+    }
 
-  if (showAccounts) {
-    const base = {
-      periodStart: formData.periodStart,
-      periodEnd: formData.periodEnd,
-      turnover: formData.turnover,
-      profit: formData.profit,
-    };
+    if (showAccounts) {
+      const base = {
+        periodStart: formData.periodStart,
+        periodEnd: formData.periodEnd,
+        turnover: formData.turnover,
+        profit: formData.profit,
+      };
+      if (showTaxReturn) base.taxLiability = formData.taxLiability;
+      return base;
+    }
 
-    // Only include taxLiability for tax return filings
-    if (showTaxReturn) base.taxLiability = formData.taxLiability;
+    if (showPayment) {
+      return {
+        taxPaid: formData.taxPaid,
+        transactionRef: formData.transactionRef,
+      };
+    }
 
-    return base;
-  }
+    if (showRegisterMembers) {
+      return {
+        effectiveDate: formData.effectiveDate,
+        changeType: formData.changeType,
+        toMemberName: formData.toMemberName,
+        fromMemberName: formData.fromMemberName,
+        memberAddress: formData.memberAddress,
+        shareClass: formData.shareClass,
+        sharesChange: formData.sharesChange,
+        certificateRef: formData.certificateRef,
+        notes: formData.notes,
+      };
+    }
 
-  if (showPayment) {
-    return {
-      taxPaid: formData.taxPaid,
-      transactionRef: formData.transactionRef,
-    };
-  }
+    if (showRegisterDirectors) {
+      return {
+        effectiveDate: formData.directorEffectiveDate,
+        changeType: formData.directorChangeType,
+        fullName: formData.directorName,
+        serviceAddress: formData.directorServiceAddress,
+        nationality: formData.directorNationality,
+        countryOfResidence: formData.directorCountryOfResidence,
+        occupation: formData.directorOccupation,
+        dob: formData.directorDob,
+        notes: formData.directorNotes,
+      };
+    }
 
-  if (showRegister) {
-    return {
-      effectiveDate: formData.effectiveDate,
-      changeType: formData.changeType,
-      toMemberName: formData.toMemberName,
-      fromMemberName: formData.fromMemberName,
-      memberAddress: formData.memberAddress,
-      shareClass: formData.shareClass,
-      sharesChange: formData.sharesChange,
-      certificateRef: formData.certificateRef,
-      notes: formData.notes,
-    };
-  }
+    return {};
+  };
 
-  // fallback
-  return {};
-};
-
+  // ---------- Submit ----------
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    if (!companyId || !filingType) return;
 
+    setLoading(true);
     try {
-      // 1) Always log filing history (keeps your timeline unified)
+      // 0) Validate register actions before writing anything
+      if (showRegisterMembers) {
+        const err = validateRegisterMembers();
+        if (err) {
+          toast.error(err);
+          setLoading(false);
+          return;
+        }
+      }
+      if (showRegisterDirectors) {
+        const err = validateRegisterDirectors();
+        if (err) {
+          toast.error(err);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 1) Always log filing history (timeline)
       await addDoc(collection(db, "companies", companyId, "filingHistory"), {
         filingType,
         dateFiled: filingDate,
@@ -272,21 +339,13 @@ const RecordFiling = () => {
           setLoading(false);
           return;
         }
-
         await updateDoc(companyRef, {
           lastAccountsPeriodEnd: formData.periodEnd,
           isFirstYear: false,
         });
       }
 
-      if (filingType.includes("Register of Members")) {
-        const err = validateRegister();
-        if (err) {
-          toast.error(err);
-          setLoading(false);
-          return;
-        }
-
+      if (showRegisterMembers) {
         await addDoc(collection(db, "companies", companyId, "registerUpdates"), {
           createdAt: new Date(),
           data: {
@@ -303,8 +362,27 @@ const RecordFiling = () => {
         });
       }
 
+      if (showRegisterDirectors) {
+        await addDoc(collection(db, "companies", companyId, "directorUpdates"), {
+          createdAt: new Date(),
+          data: {
+            effectiveDate: formData.directorEffectiveDate,
+            changeType: formData.directorChangeType,
+            fullName: formData.directorName.trim(), // must match RegisterDirectors.jsx
+            serviceAddress: (formData.directorServiceAddress || "").trim(),
+            nationality: (formData.directorNationality || "").trim(),
+            countryOfResidence: (formData.directorCountryOfResidence || "").trim(),
+            occupation: (formData.directorOccupation || "").trim(),
+            dob: formData.directorDob || "",
+            notes: (formData.directorNotes || "").trim(),
+            appointmentDate:
+              formData.directorChangeType === "APPOINT" ? formData.directorEffectiveDate : "",
+          },
+        });
+      }
+
       toast.success(`${filingType} recorded!`);
-      setTimeout(() => navigate("/dashboard"), 1500);
+      setTimeout(() => navigate(-1), 900);
     } catch (error) {
       console.error(error);
       toast.error("Error saving record.");
@@ -312,12 +390,6 @@ const RecordFiling = () => {
       setLoading(false);
     }
   };
-
-  const showAccounts = filingType?.includes("Accounts") || filingType?.includes("Tax Return");
-  const showTaxReturn = filingType?.includes("Tax Return");
-  const showConfirmation = filingType?.includes("Confirmation");
-  const showPayment = filingType?.includes("Payment");
-  const showRegister = filingType?.includes("Register of Members");
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10 transition-colors">
@@ -380,8 +452,121 @@ const RecordFiling = () => {
             </div>
           )}
 
+          {/* REGISTER OF DIRECTORS */}
+          {showRegisterDirectors && (
+            <div className="space-y-5">
+              <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                Register of Directors Update
+              </label>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective date</span>
+                  <input
+                    type="date"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                    value={formData.directorEffectiveDate}
+                    onChange={(e) => updateField("directorEffectiveDate", e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change type</span>
+                  <select
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black transition"
+                    value={formData.directorChangeType}
+                    onChange={(e) => updateField("directorChangeType", e.target.value)}
+                    required
+                  >
+                    <option value="APPOINT">Appoint (AP01)</option>
+                    <option value="RESIGN">Resign (TM01)</option>
+                    <option value="CHANGE_DETAILS">Change details (CH01)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Full name</span>
+                  <input
+                    placeholder="e.g. Alex Demo"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                    value={formData.directorName}
+                    onChange={(e) => updateField("directorName", e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Service address (optional)</span>
+                  <input
+                    placeholder="e.g. 1 Demo Street, London"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                    value={formData.directorServiceAddress}
+                    onChange={(e) => updateField("directorServiceAddress", e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  placeholder="Nationality (optional)"
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                  value={formData.directorNationality}
+                  onChange={(e) => updateField("directorNationality", e.target.value)}
+                />
+                <input
+                  placeholder="Country of residence (optional)"
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                  value={formData.directorCountryOfResidence}
+                  onChange={(e) => updateField("directorCountryOfResidence", e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  placeholder="Occupation (optional)"
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                  value={formData.directorOccupation}
+                  onChange={(e) => updateField("directorOccupation", e.target.value)}
+                />
+                <input
+                  type="date"
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
+                  value={formData.directorDob}
+                  onChange={(e) => updateField("directorDob", e.target.value)}
+                  title="Optional: store internally; Companies House generally displays month/year publicly."
+                />
+              </div>
+
+              <textarea
+                rows={2}
+                placeholder="Notes (optional)"
+                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 transition"
+                value={formData.directorNotes}
+                onChange={(e) => updateField("directorNotes", e.target.value)}
+              />
+
+              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                Form refs:{" "}
+                <a className="underline" href="https://www.gov.uk/government/publications/appoint-a-director-ap01" target="_blank" rel="noreferrer">
+                  AP01
+                </a>{" "}
+                •{" "}
+                <a className="underline" href="https://www.gov.uk/government/publications/terminate-an-appointment-of-a-director-tm01" target="_blank" rel="noreferrer">
+                  TM01
+                </a>{" "}
+                •{" "}
+                <a className="underline" href="https://www.gov.uk/government/publications/change-details-of-a-director-ch01" target="_blank" rel="noreferrer">
+                  CH01
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* REGISTER OF MEMBERS SECTION */}
-          {showRegister && (
+          {showRegisterMembers && (
             <div className="space-y-5">
               <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
                 Register of Members Update
@@ -389,9 +574,7 @@ const RecordFiling = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Effective date
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective date</span>
                   <input
                     type="date"
                     className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
@@ -402,9 +585,7 @@ const RecordFiling = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Change type
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change type</span>
                   <select
                     className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black transition"
                     value={formData.changeType}
@@ -421,9 +602,7 @@ const RecordFiling = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Member (to)
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member (to)</span>
                   <input
                     placeholder="Member name"
                     className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
@@ -435,9 +614,7 @@ const RecordFiling = () => {
 
                 {formData.changeType === "TRANSFER_SHARES" && (
                   <div className="space-y-2">
-                    <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                      From member
-                    </span>
+                    <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">From member</span>
                     <input
                       placeholder="From member name"
                       className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
@@ -450,9 +627,7 @@ const RecordFiling = () => {
               </div>
 
               <div className="space-y-2">
-                <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                  Member address
-                </span>
+                <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member address</span>
                 <textarea
                   rows={2}
                   placeholder="Address for the statutory register"
@@ -465,9 +640,7 @@ const RecordFiling = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Share class
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Share class</span>
                   <input
                     placeholder="e.g. Ordinary"
                     className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
@@ -478,9 +651,7 @@ const RecordFiling = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Shares change (+ / -)
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Shares change (+ / -)</span>
                   <input
                     type="number"
                     step="1"
@@ -516,6 +687,7 @@ const RecordFiling = () => {
               <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
                 Statutory Snapshot
               </label>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <textarea
                   placeholder="Current Directors"
@@ -532,6 +704,7 @@ const RecordFiling = () => {
                   required
                 />
               </div>
+
               <div className="space-y-4">
                 <input
                   placeholder="Statement of Capital"
@@ -553,7 +726,7 @@ const RecordFiling = () => {
 
           {/* ACCOUNTS / TAX RETURN SECTION */}
           {showAccounts && (
-            <div className="space-y-5 animate__animated animate__fadeIn">
+            <div className="space-y-5">
               <div className="flex justify-between items-center">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-emerald-500">
                   {showTaxReturn ? "HMRC Tax Computation" : "Financial Performance"}
@@ -567,9 +740,7 @@ const RecordFiling = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Turnover (£)
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Turnover (£)</span>
                   <input
                     type="number"
                     step="0.01"
@@ -581,9 +752,7 @@ const RecordFiling = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
-                    Net Profit (£)
-                  </span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Net Profit (£)</span>
                   <input
                     type="number"
                     step="0.01"
@@ -619,7 +788,7 @@ const RecordFiling = () => {
                       </button>
 
                       {formData.taxLiability && (
-                        <div className="w-full mt-8 animate__animated animate__fadeInUp">
+                        <div className="w-full mt-8">
                           <div className="relative">
                             <div className="absolute -top-3 left-6 px-2 bg-white dark:bg-gray-900 text-[9px] font-black text-orange-500 uppercase tracking-widest">
                               Estimated Tax Due

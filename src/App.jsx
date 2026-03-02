@@ -17,6 +17,8 @@ import RecordRevenue from "./pages/RecordRevenue";
 import ExpenseLedger from "./pages/ExpenseLedger";
 import RegisterMembers from "./pages/RegisterMembers";
 import FilingsHistory from "./pages/FilingsHistory";
+import DemoTools from "./pages/DemoTools";
+import RegisterDirectors from "./pages/RegisterDirectors";
 
 export default function App() {
   return (
@@ -54,7 +56,11 @@ export default function App() {
         <Route path="/record-revenue/:companyId" element={<RecordRevenue />} />
         <Route path='/expense-history' element={<ExpenseLedger/>} />  
         <Route path='/registers/:companyId/members' element={<RegisterMembers/>} />  
-        <Route path="/filings/:companyId/history" element={<FilingsHistory />} />        {/* Fallback */}
+        <Route path="/filings/:companyId/history" element={<FilingsHistory />} />  
+        <Route path="demo-tools" element={<DemoTools />} />
+        <Route path="/registers/:companyId/directors" element={<RegisterDirectors />} />      
+        
+        {/* Fallback */}
         <Route path="dashboard" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>

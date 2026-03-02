@@ -39,11 +39,17 @@ const extractEffectiveDate = (docData) => {
 
 // Styling helpers
 const STYLE = {
-  gray: "border-gray-300 bg-gray-50 text-gray-500 dark:bg-gray-800/50 dark:text-gray-400",
+  // more “alive” for IN PROGRESS
+  progress:
+    "border-indigo-300 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300",
+  // keep your existing punchy states
   blue: "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
   orange:
     "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
   red: "border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
+  // optional “neutral” for empty states
+  neutral:
+    "border-slate-200 bg-white text-slate-700 dark:bg-gray-900 dark:text-slate-200 dark:border-gray-800",
 };
 
 const Filings = () => {
@@ -66,11 +72,11 @@ const Filings = () => {
     lastCS01FiledOn: null,
     lastRegisterEffectiveDate: null,
     label: "IN PROGRESS",
-    style: STYLE.gray,
+    style: STYLE.progress,
     desc: "Select a company to view register status.",
   });
 
-  // 1) Fetch companies
+  // 1) Fetch companies + auto-select when only one
   useEffect(() => {
     const fetchCompanies = async () => {
       if (!user?.email) return;
@@ -78,14 +84,32 @@ const Filings = () => {
       const data = await getCompaniesByEmail(user.email);
       setCompanies(data);
       setLoadingCompanies(false);
-    };
-    fetchCompanies();
-  }, [user]);
 
-  // 2) Sync selectedCompanyId with URL param
+      // If route already provides companyId, don't override it.
+      if (companyId) return;
+
+      // Auto-pick if exactly 1 company
+      if (data.length === 1) {
+        setSelectedCompanyId(data[0].id);
+        navigate(`/filings/${data[0].id}`, { replace: true });
+        return;
+      }
+
+      // If none, clear selection
+      if (data.length === 0) setSelectedCompanyId("");
+    };
+
+    fetchCompanies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, companyId]);
+
+  // 2) Sync selectedCompanyId with URL param (preferred source of truth)
   useEffect(() => {
     if (companyId) setSelectedCompanyId(companyId);
-    else setSelectedCompanyId("");
+    else {
+      // if no param and we have multiple companies, keep empty until user picks
+      setSelectedCompanyId((prev) => prev || "");
+    }
   }, [companyId]);
 
   // 3) History preview (last 10)
@@ -121,12 +145,15 @@ const Filings = () => {
     if (daysToDeadline <= 30) return { label: "DUE SOON", style: STYLE.orange };
     if (windowOpens && (today.isAfter(windowOpens) || today.isSame(windowOpens, "day")))
       return { label: "READY TO FILE", style: STYLE.blue };
-    return { label: "IN PROGRESS", style: STYLE.gray };
+
+    return { label: "IN PROGRESS", style: STYLE.progress };
   };
 
   // ---------- Build cards (period-end aware) ----------
   useEffect(() => {
     const company = companies.find((c) => c.id === selectedCompanyId);
+
+    // If we have no company selected (or none exist), clear cards
     if (!company) {
       setCards([]);
       return;
@@ -206,8 +233,8 @@ const Filings = () => {
         desc: canComputeHMRC
           ? "Tax due to HMRC (9 months + 1 day after period end)."
           : isFirstYear
-            ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
-            : "Needs setup: missing period end.",
+          ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
+          : "Needs setup: missing period end.",
         govLink: "https://www.gov.uk/pay-corporation-tax",
       },
       {
@@ -218,8 +245,8 @@ const Filings = () => {
         desc: canComputeHMRC
           ? "Company tax return due to HMRC (12 months after period end)."
           : isFirstYear
-            ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
-            : "Needs setup: missing period end.",
+          ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
+          : "Needs setup: missing period end.",
         govLink: "https://www.gov.uk/file-your-company-accounts-and-tax-return",
       },
     ];
@@ -243,8 +270,10 @@ const Filings = () => {
           lastCS01FiledOn: null,
           lastRegisterEffectiveDate: null,
           label: "IN PROGRESS",
-          style: STYLE.gray,
-          desc: "Select a company to view register status.",
+          style: STYLE.progress,
+          desc: companies.length === 0
+            ? "Add a company to start using the Filing Center."
+            : "Select a company to view register status.",
         });
         return;
       }
@@ -323,20 +352,23 @@ const Filings = () => {
           lastCS01FiledOn: null,
           lastRegisterEffectiveDate: null,
           label: "IN PROGRESS",
-          style: STYLE.gray,
+          style: STYLE.progress,
           desc: "Could not load register status.",
         });
       }
     };
 
     run();
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, companies.length]);
 
   const handleSelectChange = (e) => {
     const id = e.target.value;
     setSelectedCompanyId(id);
     navigate(`/filings/${id}`);
   };
+
+  const showCompanyPicker = companies.length > 1;
+  const hasNoCompanies = !loadingCompanies && companies.length === 0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6 transition-colors duration-300">
@@ -352,232 +384,295 @@ const Filings = () => {
           </div>
         </header>
 
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-3xl shadow-xl shadow-black/5 border border-gray-100 dark:border-gray-800 mb-8">
-          <label className="block text-xs font-black uppercase tracking-[0.2em] text-gray-400 dark:text-gray-500 mb-3">
-            Select Company
-          </label>
-          <select
-            className="w-full p-4 rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-600 transition outline-none text-lg font-bold"
-            onChange={handleSelectChange}
-            value={selectedCompanyId}
-            disabled={loadingCompanies}
+        {/* NO COMPANIES EMPTY STATE */}
+        {hasNoCompanies ? (
+          <div
+            onClick={() => navigate("/company-settings")}
+            className="p-10 md:p-12 bg-amber-500/5 border-2 border-dashed border-amber-500/30 rounded-[2.5rem] flex flex-col items-center text-center cursor-pointer hover:bg-amber-500/10 transition-all"
           >
-            <option value="">Choose from portfolio...</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {cards.map((item, idx) => {
-            if (item.kind === "REGISTER") {
-              const status = {
-                label: registerMeta.loading ? "LOADING" : registerMeta.label,
-                style: registerMeta.style,
-              };
-
-              return (
-                <div
-                  key={`reg-${idx}`}
-                  className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}
+            <div className="w-16 h-16 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center text-2xl mb-4">
+              🏢
+            </div>
+            <p className="text-slate-900 dark:text-white font-black uppercase text-sm">
+              No companies found
+            </p>
+            <p className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1 mb-4">
+              Add a company to start using the Filing Center.
+            </p>
+            <button className="bg-amber-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+              Add Company
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* COMPANY PICKER (only when multiple companies) */}
+            {showCompanyPicker && (
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-3xl shadow-xl shadow-black/5 border border-gray-100 dark:border-gray-800 mb-8">
+                <label className="block text-xs font-black uppercase tracking-[0.2em] text-gray-400 dark:text-gray-500 mb-3">
+                  Select Company
+                </label>
+                <select
+                  className="w-full p-4 rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-600 transition outline-none text-lg font-bold"
+                  onChange={handleSelectChange}
+                  value={selectedCompanyId}
+                  disabled={loadingCompanies}
                 >
-                  <div className="mb-6">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
-                      <div className="w-fit">
-                        <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
-                          {status.label}
-                        </span>
-                      </div>
-
-                      {registerMeta.lastRegisterEffectiveDate && (
-                        <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right">
-                          Last update:{" "}
-                          {dayjs(registerMeta.lastRegisterEffectiveDate).format("DD MMM YYYY")}
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
-                      {item.title}
-                    </h3>
-                    <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
-                      Maintain
-                    </p>
-                    <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
-                      {item.desc}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
-                    <button
-                      className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
-                      onClick={() =>
-                        navigate(`/record-filing/${selectedCompanyId}/Register of Members`)
-                      }
-                      disabled={!selectedCompanyId}
-                    >
-                      Log Update
-                    </button>
-
-                    <button
-                      className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 rounded-2xl font-bold text-xs transition text-center flex items-center justify-center whitespace-nowrap"
-                      onClick={() => navigate(`/registers/${selectedCompanyId}/members`)}
-                      disabled={!selectedCompanyId}
-                    >
-                      View Register ↗
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            const status = getDeadlineStatus(item.deadline, item.windowOpens);
-            const today = dayjs();
-            const daysRemaining = item.deadline ? dayjs(item.deadline).diff(today, "day") : null;
-
-            return (
-              <div
-                key={`fil-${idx}`}
-                className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}
-              >
-                <div className="mb-6">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
-                    <div className="w-fit">
-                      <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
-                        {status.label}
-                      </span>
-                    </div>
-
-                    {item.deadline && status.label !== "IN PROGRESS" && (
-                      <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right">
-                        {daysRemaining < 0
-                          ? `${Math.abs(daysRemaining)} days overdue`
-                          : `${daysRemaining} days left`}
-                      </span>
-                    )}
-                  </div>
-
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
-                    {item.title}
-                  </h3>
-
-                  <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
-                    {item.deadline ? dayjs(item.deadline).format("DD MMM YYYY") : "—"}
-                  </p>
-
-                  <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
-                    {item.desc}
-                  </p>
-                </div>
-
-                <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
-                  <button
-                    className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
-                    onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}`)}
-                    disabled={!selectedCompanyId}
-                  >
-                    Log Submission
-                  </button>
-
-                  {item.govLink ? (
-                    <a
-                      href={item.govLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 rounded-2xl font-bold text-xs transition text-center flex items-center justify-center whitespace-nowrap"
-                    >
-                      Gov.uk ↗
-                    </a>
-                  ) : (
-                    <span className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-2xl font-bold text-xs flex items-center justify-center whitespace-nowrap">
-                      No link
-                    </span>
-                  )}
-                </div>
+                  <option value="">Choose from portfolio...</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            );
-          })}
-        </div>
+            )}
 
-        {/* Filing History (Preview) */}
-        {selectedCompanyId && (
-          <div className="mt-10">
-            <div className="flex items-end justify-between gap-4 mb-4">
-              <div>
-                <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">
-                  Previously Filed
-                </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-                  Last 10 submissions logged for this company.
+            {/* If multiple companies and none selected yet, prompt */}
+            {companies.length > 1 && !selectedCompanyId ? (
+              <div className="p-20 text-center border-4 border-dashed border-slate-100 dark:border-slate-800/50 rounded-[3rem]">
+                <p className="text-slate-400 font-black uppercase tracking-[0.4em] text-xs">
+                  Select a company to view filings
                 </p>
               </div>
+            ) : (
+              <>
+                <div className="grid gap-6 md:grid-cols-2">
+                  {cards.map((item, idx) => {
+                    if (item.kind === "REGISTER") {
+                      const status = {
+                        label: registerMeta.loading ? "LOADING" : registerMeta.label,
+                        style: registerMeta.style,
+                      };
 
-              <button
-                onClick={() => navigate(`/filings/${selectedCompanyId}/history`)}
-                className="px-6 py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition"
-              >
-                View all →
-              </button>
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-gray-800 overflow-hidden">
-              {loadingHistory ? (
-                <div className="p-10 text-center font-black uppercase tracking-widest text-xs text-slate-400 animate-pulse">
-                  Loading History...
-                </div>
-              ) : history.length === 0 ? (
-                <div className="p-10 text-center text-slate-400 dark:text-slate-500">
-                  <p className="font-black uppercase tracking-widest text-xs">No submissions logged yet.</p>
-                  <p className="text-sm mt-2">Use “Log Submission” on a card above.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                        <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date Filed</th>
-                        <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
-                        <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">
-                          Quick Note
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                      {history.map((h) => {
-                        const sd = h.submissionDetails || {};
-                        const note =
-                          sd.periodEnd
-                            ? `Period end: ${dayjs(sd.periodEnd).format("DD MMM YYYY")}`
-                            : sd.effectiveDate
-                              ? `Effective: ${dayjs(sd.effectiveDate).format("DD MMM YYYY")}`
-                              : "";
-
-                        return (
-                          <tr key={h.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition">
-                            <td className="p-6 font-black text-slate-900 dark:text-white">
-                              {h.dateFiled ? dayjs(h.dateFiled).format("DD MMM YYYY") : "—"}
-                            </td>
-                            <td className="p-6">
-                              <div className="font-black text-slate-900 dark:text-white">{h.filingType || h.type || "—"}</div>
-                              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
-                                {h.createdAt?.toDate ? dayjs(h.createdAt.toDate()).format("DD MMM YYYY HH:mm") : ""}
+                      return (
+                        <div
+                          key={`reg-${idx}`}
+                          className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}
+                        >
+                          <div className="mb-6">
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+                              <div className="w-fit">
+                                <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
+                                  {status.label}
+                                </span>
                               </div>
-                            </td>
-                            <td className="p-6 hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold">
-                              {note || "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+
+                              {registerMeta.lastRegisterEffectiveDate && (
+                                <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right">
+                                  Last update:{" "}
+                                  {dayjs(registerMeta.lastRegisterEffectiveDate).format("DD MMM YYYY")}
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                              {item.title}
+                            </h3>
+                            <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
+                              Maintain
+                            </p>
+                            <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
+                              {item.desc}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
+                            <button
+                              className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
+                              onClick={() =>
+                                navigate(`/record-filing/${selectedCompanyId}/Register of Members`)
+                              }
+                              disabled={!selectedCompanyId}
+                            >
+                              Log Update
+                            </button>
+
+                            <div className="flex flex-col gap-2 w-full lg:w-auto">
+                              <button
+                                className="w-full lg:w-auto px-5 py-3.5 
+                                  bg-emerald-500/10 hover:bg-emerald-500/20
+                                  text-emerald-700 dark:text-emerald-300
+                                  rounded-2xl font-black text-xs uppercase tracking-widest
+                                  transition flex items-center justify-center whitespace-nowrap"
+                                onClick={() => navigate(`/registers/${selectedCompanyId}/members`)}
+                              >
+                                Members ↗
+                              </button>
+
+                              <button
+                                className="w-full lg:w-auto px-5 py-3.5 
+                                  bg-indigo-500/10 hover:bg-indigo-500/20
+                                  text-indigo-700 dark:text-indigo-300
+                                  rounded-2xl font-black text-xs uppercase tracking-widest
+                                  transition flex items-center justify-center whitespace-nowrap"
+                                onClick={() => navigate(`/registers/${selectedCompanyId}/directors`)}
+                              >
+                                Directors ↗
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const status = getDeadlineStatus(item.deadline, item.windowOpens);
+                    const today = dayjs();
+                    const daysRemaining = item.deadline ? dayjs(item.deadline).diff(today, "day") : null;
+
+                    return (
+                      <div
+                        key={`fil-${idx}`}
+                        className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}
+                      >
+                        <div className="mb-6">
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
+                            <div className="w-fit">
+                              <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
+                                {status.label}
+                              </span>
+                            </div>
+
+                            {item.deadline && status.label !== "IN PROGRESS" && (
+                              <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right">
+                                {daysRemaining < 0
+                                  ? `${Math.abs(daysRemaining)} days overdue`
+                                  : `${daysRemaining} days left`}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                            {item.title}
+                          </h3>
+
+                          <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
+                            {item.deadline ? dayjs(item.deadline).format("DD MMM YYYY") : "—"}
+                          </p>
+
+                          <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
+                            {item.desc}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
+                          <button
+                            className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
+                            onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}`)}
+                            disabled={!selectedCompanyId}
+                          >
+                            Log Submission
+                          </button>
+
+                          {item.govLink ? (
+                            <a
+                              href={item.govLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 rounded-2xl font-bold text-xs transition text-center flex items-center justify-center whitespace-nowrap"
+                            >
+                              Gov.uk ↗
+                            </a>
+                          ) : (
+                            <span className="w-full lg:w-auto px-5 py-3.5 bg-black/5 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-2xl font-bold text-xs flex items-center justify-center whitespace-nowrap">
+                              No link
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          </div>
+
+                {/* Filing History (Preview) */}
+                {selectedCompanyId && (
+                  <div className="mt-10">
+                    <div className="flex items-end justify-between gap-4 mb-4">
+                      <div>
+                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">
+                          Previously Filed
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                          Last 10 submissions logged for this company.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => navigate(`/filings/${selectedCompanyId}/history`)}
+                        className="px-6 py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition"
+                      >
+                        View all →
+                      </button>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-gray-800 overflow-hidden">
+                      {loadingHistory ? (
+                        <div className="p-10 text-center font-black uppercase tracking-widest text-xs text-slate-400 animate-pulse">
+                          Loading History...
+                        </div>
+                      ) : history.length === 0 ? (
+                        <div className="p-10 text-center text-slate-400 dark:text-slate-500">
+                          <p className="font-black uppercase tracking-widest text-xs">
+                            No submissions logged yet.
+                          </p>
+                          <p className="text-sm mt-2">Use “Log Submission” on a card above.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                                <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                  Date Filed
+                                </th>
+                                <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                  Type
+                                </th>
+                                <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">
+                                  Quick Note
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                              {history.map((h) => {
+                                const sd = h.submissionDetails || {};
+                                const note =
+                                  sd.periodEnd
+                                    ? `Period end: ${dayjs(sd.periodEnd).format("DD MMM YYYY")}`
+                                    : sd.effectiveDate
+                                    ? `Effective: ${dayjs(sd.effectiveDate).format("DD MMM YYYY")}`
+                                    : "";
+
+                                return (
+                                  <tr key={h.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition">
+                                    <td className="p-6 font-black text-slate-900 dark:text-white">
+                                      {h.dateFiled ? dayjs(h.dateFiled).format("DD MMM YYYY") : "—"}
+                                    </td>
+                                    <td className="p-6">
+                                      <div className="font-black text-slate-900 dark:text-white">
+                                        {h.filingType || h.type || "—"}
+                                      </div>
+                                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                                        {h.createdAt?.toDate
+                                          ? dayjs(h.createdAt.toDate()).format("DD MMM YYYY HH:mm")
+                                          : ""}
+                                      </div>
+                                    </td>
+                                    <td className="p-6 hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold">
+                                      {note || "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
     </div>

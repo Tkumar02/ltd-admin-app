@@ -9,6 +9,8 @@ service cloud.firestore {
   }
 }
 
+login email - demo@finnexa.com
+pw - demoUSER
 
 to deploy:
 

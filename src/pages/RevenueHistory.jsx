@@ -444,9 +444,9 @@ const RevenueLedger = () => {
             <div className="text-[10px] font-black uppercase tracking-widest mt-4 opacity-70">
               Cash turnover
             </div>
-            <div className="text-4xl font-black italic mt-1">
-              {formatGBP(rolling.cashReceivedVATTurnover)}
-            </div>
+<div className="text-1xl font-black italic mt-1 break-words">
+  {formatGBP(rolling.cashReceivedVATTurnover)}
+</div>
           </div>
         </div>
       </div>
