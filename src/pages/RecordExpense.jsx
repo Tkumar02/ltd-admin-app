@@ -183,7 +183,7 @@ const RecordExpense = () => {
                     <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Notes / Business Justification</label>
                         <textarea 
-                            placeholder="e.g. Purchased 5 copies of Catan for cafe stock"
+                            placeholder="e.g. Purchased stock"
                             className="w-full mt-2 p-4 rounded-2xl bg-gray-100 dark:bg-gray-800 min-h-[100px] text-sm"
                             value={formData.notes}
                             onChange={e => setFormData({...formData, notes: e.target.value})}

@@ -97,37 +97,59 @@ const Dashboard = () => {
 
     const getPeriods = (company) => {
         if (!company) return [];
-        let ard = company.nextAccountsDate ? dayjs(company.nextAccountsDate) : dayjs(company.incorporationDate).add(1, 'year');
-        while (dayjs().isAfter(ard)) { ard = ard.add(1, 'year'); }
-        const end = ard;
-        const start = end.subtract(1, 'year').add(1, 'day');
+
+        const anchor = company.lastAccountsPeriodEnd 
+            ? dayjs(company.lastAccountsPeriodEnd)
+            : dayjs(company.incorporationDate);
+
+        const end = anchor.add(1, "year");
+        const start = anchor.add(1, "day");
+
         return [{ start, end }];
     };
 
     const getCompanySummary = (company) => {
-        const { incorporationDate, lastAccountsDate, isFirstYear } = company;
+        const { incorporationDate, lastAccountsPeriodEnd } = company;
         const today = dayjs();
+
         let accountsDeadline;
         let windowOpens;
 
+        const isFirstYear = !lastAccountsPeriodEnd;
+
         if (isFirstYear) {
+            // First accounts: 21 months from incorporation
             accountsDeadline = dayjs(incorporationDate).add(21, "months");
-            windowOpens = dayjs(incorporationDate).add(1, "year").add(1, "day");
+            windowOpens = dayjs(incorporationDate); // filing allowed anytime
         } else {
-            const currentYearEnd = dayjs(lastAccountsDate).add(1, "year");
-            accountsDeadline = currentYearEnd.add(9, "months");
-            windowOpens = currentYearEnd.add(1, "day");
+            // Established cycle
+            const nextPeriodEnd = dayjs(lastAccountsPeriodEnd).add(1, "year");
+            accountsDeadline = nextPeriodEnd.add(9, "months");
+            windowOpens = nextPeriodEnd.add(1, "day");
         }
 
         const daysLeft = accountsDeadline.diff(today, "day");
-        let status = { label: "IN PROGRESS", style: "text-slate-500 border-slate-200 bg-slate-50 dark:bg-slate-900/40 dark:border-slate-800 dark:text-slate-400" };
-        
+
+        let status = { 
+            label: "IN PROGRESS", 
+            style: "text-slate-500 border-slate-200 bg-slate-50 dark:bg-slate-900/40 dark:border-slate-800 dark:text-slate-400" 
+        };
+            
         if (daysLeft < 0) {
-            status = { label: "OVERDUE", style: "text-rose-600 border-rose-200 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-400" };
+            status = { 
+                label: "OVERDUE", 
+                style: "text-rose-600 border-rose-200 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-400" 
+            };
         } else if (daysLeft <= 30) {
-            status = { label: "DUE SOON", style: "text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" };
+            status = { 
+                label: "DUE SOON", 
+                style: "text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400" 
+            };
         } else if (today.isAfter(windowOpens) || today.isSame(windowOpens, 'day')) {
-            status = { label: "READY TO FILE", style: "text-indigo-600 border-indigo-200 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-400" };
+            status = { 
+                label: "READY TO FILE", 
+                style: "text-indigo-600 border-indigo-200 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-400" 
+            };
         }
 
         return { accountsDeadline, daysLeft, status };

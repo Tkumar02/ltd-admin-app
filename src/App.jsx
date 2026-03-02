@@ -1,6 +1,5 @@
 // App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
-
 import MainLayout from "./layout/MainLayout";
 import CompanyScreen from "./pages/CompanySettings";
 import CompanyDetails from "./pages/CompanyDetails";
@@ -16,6 +15,8 @@ import TransactionHistory from "./pages/TransactionHistory";
 import RevenueHistory from "./pages/RevenueHistory";
 import RecordRevenue from "./pages/RecordRevenue";
 import ExpenseLedger from "./pages/ExpenseLedger";
+import RegisterMembers from "./pages/RegisterMembers";
+import FilingsHistory from "./pages/FilingsHistory";
 
 export default function App() {
   return (
@@ -52,8 +53,8 @@ export default function App() {
         <Route path='/record-revenue' element={<RecordRevenue/>} />
         <Route path="/record-revenue/:companyId" element={<RecordRevenue />} />
         <Route path='/expense-history' element={<ExpenseLedger/>} />  
-
-        {/* Fallback */}
+        <Route path='/registers/:companyId/members' element={<RegisterMembers/>} />  
+        <Route path="/filings/:companyId/history" element={<FilingsHistory />} />        {/* Fallback */}
         <Route path="dashboard" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
