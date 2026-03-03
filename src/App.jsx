@@ -19,6 +19,8 @@ import RegisterMembers from "./pages/RegisterMembers";
 import FilingsHistory from "./pages/FilingsHistory";
 import DemoTools from "./pages/DemoTools";
 import RegisterDirectors from "./pages/RegisterDirectors";
+import ShareCertificateNew from "./pages/shareCertificateNew";
+import ShareCertificateView from "./pages/shareCertificateView";
 
 export default function App() {
   return (
@@ -58,7 +60,9 @@ export default function App() {
         <Route path='/registers/:companyId/members' element={<RegisterMembers/>} />  
         <Route path="/filings/:companyId/history" element={<FilingsHistory />} />  
         <Route path="demo-tools" element={<DemoTools />} />
-        <Route path="/registers/:companyId/directors" element={<RegisterDirectors />} />      
+        <Route path="/registers/:companyId/directors" element={<RegisterDirectors />} />
+        <Route path="/companies/:companyId/certificates/new" element={<ShareCertificateNew />} />
+        <Route path="/companies/:companyId/certificates/:certificateId" element={<ShareCertificateView />} />      
         
         {/* Fallback */}
         <Route path="dashboard" element={<Navigate to="/dashboard" replace />} />

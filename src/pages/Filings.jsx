@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+// Filings.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase/firebaseConfig";
@@ -15,7 +16,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-// ---------- helpers (schema tolerant) ----------
+// ---------- helpers ----------
 const safeDate = (v) => {
   if (!v) return null;
   if (typeof v === "object" && typeof v.toDate === "function") {
@@ -24,32 +25,62 @@ const safeDate = (v) => {
   return v;
 };
 
-const extractFiledOn = (docData) =>
-  safeDate(docData?.filedOn) || safeDate(docData?.dateFiled) || null;
-
-const extractEffectiveDate = (docData) => {
-  const d =
-    docData?.data?.effectiveDate ||
-    docData?.submissionDetails?.effectiveDate ||
-    docData?.effectiveDate ||
-    null;
-
-  return safeDate(d) || safeDate(docData?.createdAt) || null;
+const asDayjs = (v) => {
+  const s = safeDate(v);
+  if (!s) return null;
+  const d = dayjs(s);
+  return d.isValid() ? d : null;
 };
+
+const fmt = (d) => (d ? dayjs(d).format("DD MMM YYYY") : "—");
 
 // Styling helpers
 const STYLE = {
-  // more “alive” for IN PROGRESS
   progress:
     "border-indigo-300 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300",
-  // keep your existing punchy states
   blue: "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
   orange:
     "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
   red: "border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
-  // optional “neutral” for empty states
   neutral:
     "border-slate-200 bg-white text-slate-700 dark:bg-gray-900 dark:text-slate-200 dark:border-gray-800",
+};
+
+// ---------- period math ----------
+const computeBaseStart = (company) => {
+  const inc = asDayjs(company?.incorporationDate);
+  const accStart = asDayjs(company?.accountingStart);
+  return accStart || inc;
+};
+
+const getLegacyPeriodEnd = (company) => asDayjs(company?.lastAccountsPeriodEnd);
+
+// Anchor fields (new)
+const getLastCHPeriodEnd = (company) => asDayjs(company?.lastCHPeriodEnd) || getLegacyPeriodEnd(company);
+const getLastCTPeriodEnd = (company) => asDayjs(company?.lastCTPeriodEnd) || getLegacyPeriodEnd(company);
+
+// The “active period end” shown on the card:
+// - if we have a last filed end => next end is +1 year
+// - else => estimate baseStart + 1 year
+const computeActivePeriodEnd = (lastFiledEnd, baseStart) => {
+  if (lastFiledEnd) return lastFiledEnd.add(1, "year");
+  if (baseStart) return baseStart.add(1, "year");
+  return null;
+};
+
+// ---------- statuses ----------
+const getDeadlineStatus = ({ deadline, windowOpens }) => {
+  const today = dayjs();
+  if (!deadline || !windowOpens) return { label: "NEEDS SETUP", style: STYLE.orange };
+
+  const daysToDeadline = dayjs(deadline).diff(today, "day");
+  const isReady = today.isAfter(windowOpens) || today.isSame(windowOpens, "day");
+
+  if (daysToDeadline < 0) return { label: "OVERDUE", style: STYLE.red };
+  if (daysToDeadline <= 30) return { label: "DUE SOON", style: STYLE.orange };
+  if (isReady) return { label: "READY TO FILE", style: STYLE.blue };
+
+  return { label: "IN PROGRESS", style: STYLE.progress };
 };
 
 const Filings = () => {
@@ -85,17 +116,14 @@ const Filings = () => {
       setCompanies(data);
       setLoadingCompanies(false);
 
-      // If route already provides companyId, don't override it.
       if (companyId) return;
 
-      // Auto-pick if exactly 1 company
       if (data.length === 1) {
         setSelectedCompanyId(data[0].id);
         navigate(`/filings/${data[0].id}`, { replace: true });
         return;
       }
 
-      // If none, clear selection
       if (data.length === 0) setSelectedCompanyId("");
     };
 
@@ -103,13 +131,10 @@ const Filings = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, companyId]);
 
-  // 2) Sync selectedCompanyId with URL param (preferred source of truth)
+  // 2) Sync selectedCompanyId with URL param (source of truth)
   useEffect(() => {
     if (companyId) setSelectedCompanyId(companyId);
-    else {
-      // if no param and we have multiple companies, keep empty until user picks
-      setSelectedCompanyId((prev) => prev || "");
-    }
+    else setSelectedCompanyId((prev) => prev || "");
   }, [companyId]);
 
   // 3) History preview (last 10)
@@ -135,119 +160,113 @@ const Filings = () => {
     return () => unsub();
   }, [selectedCompanyId]);
 
-  // ---------- Status label for deadline-based cards ----------
-  const getDeadlineStatus = (deadline, windowOpens) => {
-    const today = dayjs();
-    if (!deadline) return { label: "NEEDS SETUP", style: STYLE.orange };
-    const daysToDeadline = dayjs(deadline).diff(today, "day");
+  const company = useMemo(
+    () => companies.find((c) => c.id === selectedCompanyId) || null,
+    [companies, selectedCompanyId]
+  );
 
-    if (daysToDeadline < 0) return { label: "OVERDUE", style: STYLE.red };
-    if (daysToDeadline <= 30) return { label: "DUE SOON", style: STYLE.orange };
-    if (windowOpens && (today.isAfter(windowOpens) || today.isSame(windowOpens, "day")))
-      return { label: "READY TO FILE", style: STYLE.blue };
-
-    return { label: "IN PROGRESS", style: STYLE.progress };
-  };
-
-  // ---------- Build cards (period-end aware) ----------
+  // ---------- Build cards (roll-forward by anchor) ----------
   useEffect(() => {
-    const company = companies.find((c) => c.id === selectedCompanyId);
-
-    // If we have no company selected (or none exist), clear cards
     if (!company) {
       setCards([]);
       return;
     }
 
     const today = dayjs();
-    const incorporationDate = company.incorporationDate ? dayjs(company.incorporationDate) : null;
+    const inc = asDayjs(company.incorporationDate);
+    const baseStart = computeBaseStart(company);
 
-    const lastAccountsPeriodEnd = company.lastAccountsPeriodEnd
-      ? dayjs(company.lastAccountsPeriodEnd)
-      : null;
+    // ===== CH Accounts (separate anchor) =====
+    const lastCHFiledEnd = getLastCHPeriodEnd(company);
+    const chActivePeriodEnd = computeActivePeriodEnd(lastCHFiledEnd, baseStart);
+    const chIsFirst = !lastCHFiledEnd;
 
-    const isFirstYear = !lastAccountsPeriodEnd;
-
-    // Annual Accounts
     let accountsDeadline = null;
     let accountsWindowOpens = null;
     let accountsDesc = "Annual accounts.";
-
-    if (incorporationDate && isFirstYear) {
-      accountsDeadline = incorporationDate.add(21, "month");
-      accountsDesc = "First accounts filing deadline (21 months from incorporation).";
-      accountsWindowOpens = incorporationDate;
+    if (inc && chActivePeriodEnd) {
+      // NOTE: CH first accounts statutory deadline uses incorporation date (21 months)
+      accountsDeadline = chIsFirst ? inc.add(21, "month") : chActivePeriodEnd.add(9, "month");
+      accountsWindowOpens = chActivePeriodEnd.add(1, "day");
+      accountsDesc = `${chIsFirst ? "First" : "Next"} accounts for period ending ${chActivePeriodEnd.format(
+        "DD MMM YYYY"
+      )}.`;
     }
 
-    let nextPeriodEnd = null;
-    if (lastAccountsPeriodEnd && !isFirstYear) {
-      nextPeriodEnd = lastAccountsPeriodEnd.add(1, "year");
-      accountsDeadline = nextPeriodEnd.add(9, "month");
-      accountsWindowOpens = nextPeriodEnd.add(1, "day");
-      accountsDesc = `Accounts for period ending ${nextPeriodEnd.format("DD MMM YYYY")}.`;
-    }
-
-    // Confirmation Statement
+    // ===== Confirmation Statement =====
     let confDeadline = null;
     let confWindowOpens = null;
-
-    if (incorporationDate) {
-      const anniversary = incorporationDate.year(today.year());
+    if (inc) {
+      const anniversary = inc.year(today.year());
       confDeadline = anniversary.isBefore(today.subtract(1, "day"))
         ? anniversary.add(1, "year").add(14, "day")
         : anniversary.add(14, "day");
       confWindowOpens = dayjs(confDeadline).subtract(14, "day");
     }
 
+    // ===== HMRC CT (separate anchor) =====
+    const lastCTFiledEnd = getLastCTPeriodEnd(company);
+    const ctActivePeriodEnd = computeActivePeriodEnd(lastCTFiledEnd, baseStart);
+    const canComputeHMRC = !!ctActivePeriodEnd;
+
+    const ctPaymentDeadline = canComputeHMRC ? ctActivePeriodEnd.add(9, "month").add(1, "day") : null;
+    const ctReturnDeadline = canComputeHMRC ? ctActivePeriodEnd.add(12, "month") : null;
+    const ctWindowOpens = canComputeHMRC ? ctActivePeriodEnd.add(1, "day") : null;
+
     const baseFilings = [
       {
         kind: "FILING",
+        key: "CS01",
         title: "Confirmation Statement",
         deadline: confDeadline,
         windowOpens: confWindowOpens,
         desc: "Annual check of company details (CS01).",
         govLink: "https://www.gov.uk/file-your-confirmation-statement-with-companies-house",
+        lastFiledOn: asDayjs(company.lastCS01FiledOn),
+        lastFiledPeriodEnd: null,
       },
       {
         kind: "FILING",
+        key: "CH_ACCOUNTS",
         title: "Annual Accounts",
         deadline: accountsDeadline,
         windowOpens: accountsWindowOpens,
         desc: accountsDesc,
         govLink: "https://www.gov.uk/file-your-company-accounts-and-tax-return",
+        lastFiledOn: asDayjs(company.lastCHFiledOn),
+        lastFiledPeriodEnd: lastCHFiledEnd,
+        activePeriodEnd: chActivePeriodEnd,
       },
     ];
-
-    const tradingStarted =
-      company.accountingStart && dayjs(company.accountingStart).isBefore(today, "day");
-
-    const hmrcPeriodEnd = nextPeriodEnd || null;
-    const canComputeHMRC = tradingStarted && !!hmrcPeriodEnd;
 
     const hmrcCards = [
       {
         kind: "FILING",
+        key: "CT_PAYMENT",
         title: "Corporation Tax Payment",
-        deadline: canComputeHMRC ? hmrcPeriodEnd.add(9, "month").add(1, "day") : null,
-        windowOpens: canComputeHMRC ? hmrcPeriodEnd.add(1, "day") : null,
+        deadline: ctPaymentDeadline,
+        windowOpens: ctWindowOpens,
         desc: canComputeHMRC
-          ? "Tax due to HMRC (9 months + 1 day after period end)."
-          : isFirstYear
-          ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
-          : "Needs setup: missing period end.",
+          ? `Tax due (9 months + 1 day after CT period end ${ctActivePeriodEnd.format("DD MMM YYYY")}).`
+          : "Needs setup: add incorporation date / trading start.",
         govLink: "https://www.gov.uk/pay-corporation-tax",
+        lastFiledOn: asDayjs(company.lastCTPaymentFiledOn),
+        lastFiledPeriodEnd: asDayjs(company.lastCTPaymentForPeriodEnd) || null,
+        activePeriodEnd: ctActivePeriodEnd,
       },
       {
         kind: "FILING",
+        key: "CT600",
         title: "Company Tax Return (CT600)",
-        deadline: canComputeHMRC ? hmrcPeriodEnd.add(12, "month") : null,
-        windowOpens: canComputeHMRC ? hmrcPeriodEnd.add(1, "day") : null,
+        deadline: ctReturnDeadline,
+        windowOpens: ctWindowOpens,
         desc: canComputeHMRC
-          ? "Company tax return due to HMRC (12 months after period end)."
-          : isFirstYear
-          ? "Needs setup: log your first accounts period end before HMRC deadlines can be calculated."
-          : "Needs setup: missing period end.",
-        govLink: "https://www.gov.uk/file-your-company-accounts-and-tax-return",
+          ? `CT600 due 12 months after CT period end (${ctActivePeriodEnd.format("DD MMM YYYY")}).`
+          : "Needs setup: add incorporation date / trading start.",
+        govLink: "https://www.gov.uk/company-tax-returns",
+        lastFiledOn: asDayjs(company.lastCT600FiledOn),
+        lastFiledPeriodEnd: lastCTFiledEnd,
+        activePeriodEnd: ctActivePeriodEnd,
       },
     ];
 
@@ -257,9 +276,8 @@ const Filings = () => {
       desc: registerMeta.desc,
     };
 
-    const showHmrc = tradingStarted || !isFirstYear;
-    setCards([registerCard, ...baseFilings, ...(showHmrc ? hmrcCards : [])]);
-  }, [selectedCompanyId, companies, registerMeta.desc]);
+    setCards([registerCard, ...baseFilings, ...(canComputeHMRC ? hmrcCards : [])]);
+  }, [company, registerMeta.desc]);
 
   // ---------- Fetch register status meta ----------
   useEffect(() => {
@@ -271,9 +289,10 @@ const Filings = () => {
           lastRegisterEffectiveDate: null,
           label: "IN PROGRESS",
           style: STYLE.progress,
-          desc: companies.length === 0
-            ? "Add a company to start using the Filing Center."
-            : "Select a company to view register status.",
+          desc:
+            companies.length === 0
+              ? "Add a company to start using the Filing Center."
+              : "Select a company to view register status.",
         });
         return;
       }
@@ -283,7 +302,7 @@ const Filings = () => {
       try {
         const filingRef = collection(db, "companies", selectedCompanyId, "filingHistory");
 
-        // CS01 (primary: filingType, fallback: type)
+        // CS01 latest
         const cs01Q = query(
           filingRef,
           where("filingType", "==", "Confirmation Statement"),
@@ -294,16 +313,8 @@ const Filings = () => {
 
         let lastCS01 = null;
         if (!cs01Snap.empty) {
-          lastCS01 = extractFiledOn(cs01Snap.docs[0].data());
-        } else {
-          const cs01AltQ = query(
-            filingRef,
-            where("type", "==", "Confirmation Statement"),
-            orderBy("createdAt", "desc"),
-            limit(1)
-          );
-          const cs01AltSnap = await getDocs(cs01AltQ);
-          if (!cs01AltSnap.empty) lastCS01 = extractFiledOn(cs01AltSnap.docs[0].data());
+          const d = cs01Snap.docs[0].data();
+          lastCS01 = safeDate(d?.dateFiled) || safeDate(d?.filedOn) || safeDate(d?.createdAt) || null;
         }
 
         // Latest Register Update
@@ -312,7 +323,15 @@ const Filings = () => {
         const regSnap = await getDocs(regQ);
 
         let lastReg = null;
-        if (!regSnap.empty) lastReg = extractEffectiveDate(regSnap.docs[0].data());
+        if (!regSnap.empty) {
+          const d = regSnap.docs[0].data();
+          lastReg =
+            safeDate(d?.data?.effectiveDate) ||
+            safeDate(d?.submissionDetails?.effectiveDate) ||
+            safeDate(d?.effectiveDate) ||
+            safeDate(d?.createdAt) ||
+            null;
+        }
 
         let label = "UP TO DATE";
         let style = STYLE.blue;
@@ -384,7 +403,6 @@ const Filings = () => {
           </div>
         </header>
 
-        {/* NO COMPANIES EMPTY STATE */}
         {hasNoCompanies ? (
           <div
             onClick={() => navigate("/company-settings")}
@@ -405,7 +423,6 @@ const Filings = () => {
           </div>
         ) : (
           <>
-            {/* COMPANY PICKER (only when multiple companies) */}
             {showCompanyPicker && (
               <div className="bg-white dark:bg-gray-900 p-6 rounded-3xl shadow-xl shadow-black/5 border border-gray-100 dark:border-gray-800 mb-8">
                 <label className="block text-xs font-black uppercase tracking-[0.2em] text-gray-400 dark:text-gray-500 mb-3">
@@ -427,7 +444,6 @@ const Filings = () => {
               </div>
             )}
 
-            {/* If multiple companies and none selected yet, prompt */}
             {companies.length > 1 && !selectedCompanyId ? (
               <div className="p-20 text-center border-4 border-dashed border-slate-100 dark:border-slate-800/50 rounded-[3rem]">
                 <p className="text-slate-400 font-black uppercase tracking-[0.4em] text-xs">
@@ -459,8 +475,7 @@ const Filings = () => {
 
                               {registerMeta.lastRegisterEffectiveDate && (
                                 <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right">
-                                  Last update:{" "}
-                                  {dayjs(registerMeta.lastRegisterEffectiveDate).format("DD MMM YYYY")}
+                                  Last update: {dayjs(registerMeta.lastRegisterEffectiveDate).format("DD MMM YYYY")}
                                 </span>
                               )}
                             </div>
@@ -489,22 +504,14 @@ const Filings = () => {
 
                             <div className="flex flex-col gap-2 w-full lg:w-auto">
                               <button
-                                className="w-full lg:w-auto px-5 py-3.5 
-                                  bg-emerald-500/10 hover:bg-emerald-500/20
-                                  text-emerald-700 dark:text-emerald-300
-                                  rounded-2xl font-black text-xs uppercase tracking-widest
-                                  transition flex items-center justify-center whitespace-nowrap"
+                                className="w-full lg:w-auto px-5 py-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded-2xl font-black text-xs uppercase tracking-widest transition flex items-center justify-center whitespace-nowrap"
                                 onClick={() => navigate(`/registers/${selectedCompanyId}/members`)}
                               >
                                 Members ↗
                               </button>
 
                               <button
-                                className="w-full lg:w-auto px-5 py-3.5 
-                                  bg-indigo-500/10 hover:bg-indigo-500/20
-                                  text-indigo-700 dark:text-indigo-300
-                                  rounded-2xl font-black text-xs uppercase tracking-widest
-                                  transition flex items-center justify-center whitespace-nowrap"
+                                className="w-full lg:w-auto px-5 py-3.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-2xl font-black text-xs uppercase tracking-widest transition flex items-center justify-center whitespace-nowrap"
                                 onClick={() => navigate(`/registers/${selectedCompanyId}/directors`)}
                               >
                                 Directors ↗
@@ -515,7 +522,11 @@ const Filings = () => {
                       );
                     }
 
-                    const status = getDeadlineStatus(item.deadline, item.windowOpens);
+                    const status = getDeadlineStatus({
+                      deadline: item.deadline,
+                      windowOpens: item.windowOpens,
+                    });
+
                     const today = dayjs();
                     const daysRemaining = item.deadline ? dayjs(item.deadline).diff(today, "day") : null;
 
@@ -545,9 +556,17 @@ const Filings = () => {
                             {item.title}
                           </h3>
 
-                          <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-3">
+                          <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-2">
                             {item.deadline ? dayjs(item.deadline).format("DD MMM YYYY") : "—"}
                           </p>
+
+                          {/* NEW: show "last filed" context so users can see it's been completed previously */}
+                          {(item.lastFiledOn || item.lastFiledPeriodEnd) && (
+                            <div className="text-[10px] font-black uppercase tracking-widest opacity-75 mb-3">
+                              Last filed{item.lastFiledPeriodEnd ? ` (period end ${fmt(item.lastFiledPeriodEnd)})` : ""}:{" "}
+                              {fmt(item.lastFiledOn)}
+                            </div>
+                          )}
 
                           <p className="text-sm font-medium leading-relaxed opacity-70 text-gray-800 dark:text-gray-300">
                             {item.desc}
@@ -557,7 +576,9 @@ const Filings = () => {
                         <div className="flex flex-col lg:flex-row items-stretch gap-2 pt-6 border-t border-black/5 dark:border-white/5">
                           <button
                             className="w-full py-3.5 px-4 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-gray-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm transition active:scale-95"
-                            onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}`)}
+                            onClick={() =>
+                              navigate(`/record-filing/${selectedCompanyId}/${item.title}`)
+                            }
                             disabled={!selectedCompanyId}
                           >
                             Log Submission

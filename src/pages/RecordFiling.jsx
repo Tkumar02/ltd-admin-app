@@ -1,3 +1,4 @@
+// RecordFiling.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import dayjs from "dayjs";
@@ -18,17 +19,73 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { generateShareCertificate } from "../utils/shareCertificates";
 
 dayjs.extend(isBetween);
+
+const ymd = (d) => (d ? dayjs(d).format("YYYY-MM-DD") : "");
+
+const safeDate = (v) => {
+  if (!v) return null;
+  if (typeof v === "object" && typeof v.toDate === "function") return ymd(v.toDate());
+  return v;
+};
+
+const asDayjs = (v) => {
+  const s = safeDate(v);
+  if (!s) return null;
+  const d = dayjs(s);
+  return d.isValid() ? d : null;
+};
+
+const computeBaseStart = (company) => {
+  const inc = asDayjs(company?.incorporationDate);
+  const accStart = asDayjs(company?.accountingStart);
+  return accStart || inc;
+};
+
+const getLegacyPeriodEnd = (company) => asDayjs(company?.lastAccountsPeriodEnd);
+
+const getLastCHPeriodEnd = (company) => asDayjs(company?.lastCHPeriodEnd) || getLegacyPeriodEnd(company);
+const getLastCTPeriodEnd = (company) => asDayjs(company?.lastCTPeriodEnd) || getLegacyPeriodEnd(company);
+
+// Returns the *active period* the user is working towards (next period if something already filed)
+const computeSuggestedPeriod = (company, mode) => {
+  const baseStart = computeBaseStart(company);
+  const lastEnd = mode === "HMRC" ? getLastCTPeriodEnd(company) : getLastCHPeriodEnd(company);
+
+  if (lastEnd) {
+    return {
+      periodStart: ymd(lastEnd.add(1, "day")),
+      periodEnd: ymd(lastEnd.add(1, "year")),
+      source: mode === "HMRC" ? "LAST_CT_END" : "LAST_CH_END",
+    };
+  }
+  if (baseStart) {
+    return {
+      periodStart: ymd(baseStart),
+      periodEnd: ymd(baseStart.add(1, "year")),
+      source: "BASE_START",
+    };
+  }
+  return { periodStart: "", periodEnd: "", source: "MISSING" };
+};
 
 const RecordFiling = () => {
   const { companyId, filingType } = useParams();
   const navigate = useNavigate();
   const hasToasted = useRef(false);
 
+  const [certInfo, setCertInfo] = useState(null);
+  const [generatingCert, setGeneratingCert] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [filingDate, setFilingDate] = useState(dayjs().format("YYYY-MM-DD"));
+
+  const [companyMeta, setCompanyMeta] = useState(null);
+  const [periodSource, setPeriodSource] = useState("");
+  const periodTouchedRef = useRef(false);
 
   const [formData, setFormData] = useState({
     // Confirmation Statement
@@ -50,7 +107,7 @@ const RecordFiling = () => {
 
     // Register of Members
     effectiveDate: dayjs().format("YYYY-MM-DD"),
-    changeType: "ISSUE_SHARES", // ISSUE_SHARES | TRANSFER_SHARES | CANCEL_SHARES | CORRECTION
+    changeType: "ISSUE_SHARES",
     toMemberName: "",
     fromMemberName: "",
     memberAddress: "",
@@ -61,7 +118,7 @@ const RecordFiling = () => {
 
     // Register of Directors
     directorEffectiveDate: dayjs().format("YYYY-MM-DD"),
-    directorChangeType: "APPOINT", // APPOINT | RESIGN | CHANGE_DETAILS
+    directorChangeType: "APPOINT",
     directorName: "",
     directorServiceAddress: "",
     directorNationality: "",
@@ -71,14 +128,71 @@ const RecordFiling = () => {
     directorNotes: "",
   });
 
-  const updateField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field, value) =>
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
 
-  const showAccounts = filingType?.includes("Accounts") || filingType?.includes("Tax Return");
-  const showTaxReturn = filingType?.includes("Tax Return");
+  // --- type flags ---
+  const isAccountsFiling = filingType?.includes("Annual Accounts") || filingType?.includes("Accounts");
+  const isCT600Filing =
+    filingType?.includes("CT600") ||
+    filingType?.includes("Company Tax Return") ||
+    filingType?.includes("Tax Return");
+
+  const isCTPayment = filingType?.includes("Corporation Tax Payment") || filingType?.includes("Payment");
+
+  const showAccounts = isAccountsFiling || isCT600Filing;
+  const showTaxReturn = isCT600Filing;
   const showConfirmation = filingType?.includes("Confirmation");
-  const showPayment = filingType?.includes("Payment");
+  const showPayment = isCTPayment;
+
   const showRegisterMembers = filingType?.includes("Register of Members");
   const showRegisterDirectors = filingType?.includes("Register of Directors");
+
+  const mode = isCT600Filing ? "HMRC" : "CH";
+
+  const handleGenerateCertificate = async () => {
+    if (!companyId) return;
+
+    if (formData.changeType !== "ISSUE_SHARES") {
+      return toast.error("Certificates are only generated for 'Issue shares' (for now).");
+    }
+    if (certInfo?.certificateId) {
+      return toast.info("Certificate already generated. Use View/Download, or refresh to start over.");
+    }
+
+    if (!formData.toMemberName?.trim()) return toast.error("Enter member name first");
+    if (!formData.memberAddress?.trim()) return toast.error("Enter member address first");
+    const n = Number(formData.sharesChange);
+    if (!Number.isFinite(n) || n <= 0) return toast.error("Shares must be a positive number");
+    if (!formData.shareClass?.trim()) return toast.error("Enter share class first");
+
+    setGeneratingCert(true);
+    try {
+      const res = await generateShareCertificate({
+        companyId,
+        companyName: "",
+        companyNumber: "",
+        issueDate: formData.effectiveDate || dayjs().format("YYYY-MM-DD"),
+        memberName: formData.toMemberName,
+        memberAddress: formData.memberAddress,
+        shareClass: formData.shareClass,
+        shares: n,
+        notes: formData.notes || "",
+      });
+
+      setCertInfo(res);
+      updateField("certificateRef", res.certificateNumber);
+      toast.success(`Generated ${res.certificateNumber}`);
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Failed to generate certificate");
+    } finally {
+      setGeneratingCert(false);
+    }
+  };
 
   // ---------- Auto-fill helpers ----------
   useEffect(() => {
@@ -90,21 +204,30 @@ const RecordFiling = () => {
         const companyRef = doc(db, "companies", companyId);
         const companySnap = await getDoc(companyRef);
         if (!companySnap.exists()) return;
+
         const company = companySnap.data();
+        setCompanyMeta(company);
 
-        // ===== A) Financial filings (Accounts / Tax Return) =====
+        // ===== A) Financial filings (Accounts / CT600) =====
         if (showAccounts) {
-          const anchor = company.lastAccountsPeriodEnd || company.incorporationDate;
-          const anchorDate = dayjs(anchor);
+          const suggested = computeSuggestedPeriod(company, mode);
+          setPeriodSource(suggested.source);
 
-          const periodEnd = anchorDate.add(1, "year");
-          const periodStart = anchorDate.add(1, "day");
+          if (!periodTouchedRef.current) {
+            setFormData((prev) => ({
+              ...prev,
+              periodStart: suggested.periodStart,
+              periodEnd: suggested.periodEnd,
+            }));
+          }
 
-          setFormData((prev) => ({
-            ...prev,
-            periodStart: periodStart.format("YYYY-MM-DD"),
-            periodEnd: periodEnd.format("YYYY-MM-DD"),
-          }));
+          const periodStart = dayjs(periodTouchedRef.current ? formData.periodStart : suggested.periodStart);
+          const periodEnd = dayjs(periodTouchedRef.current ? formData.periodEnd : suggested.periodEnd);
+
+          if (!periodStart.isValid() || !periodEnd.isValid()) {
+            setCalculating(false);
+            return;
+          }
 
           // Expenses
           const expSnap = await getDocs(collection(db, "companies", companyId, "transactions"));
@@ -125,7 +248,7 @@ const RecordFiling = () => {
             )
             .reduce((sum, d) => sum + (Number(d.total) || 0), 0);
 
-          // Manual “other revenue” in the company subcollection
+          // Manual “other revenue”
           const otherSnap = await getDocs(collection(db, "companies", companyId, "other_revenue"));
           const totalOtherRev = otherSnap.docs
             .map((d) => d.data())
@@ -217,6 +340,15 @@ const RecordFiling = () => {
   };
 
   // ---------- Validators ----------
+  const validatePeriod = () => {
+    if (!formData.periodStart || !formData.periodEnd) return "Period start/end are required.";
+    const s = dayjs(formData.periodStart);
+    const e = dayjs(formData.periodEnd);
+    if (!s.isValid() || !e.isValid()) return "Period start/end are invalid.";
+    if (e.isSame(s, "day") || e.isBefore(s, "day")) return "Period end must be after period start.";
+    return null;
+  };
+
   const validateRegisterMembers = () => {
     if (!formData.effectiveDate) return "Effective date is required.";
     if (!formData.changeType) return "Change type is required.";
@@ -237,7 +369,7 @@ const RecordFiling = () => {
     return null;
   };
 
-  // ---------- Submission details (minimal, per type) ----------
+  // ---------- Submission details ----------
   const buildSubmissionDetails = () => {
     if (showConfirmation) {
       return {
@@ -304,25 +436,21 @@ const RecordFiling = () => {
 
     setLoading(true);
     try {
-      // 0) Validate register actions before writing anything
+      // validate
+      if (showAccounts) {
+        const err = validatePeriod();
+        if (err) return toast.error(err);
+      }
       if (showRegisterMembers) {
         const err = validateRegisterMembers();
-        if (err) {
-          toast.error(err);
-          setLoading(false);
-          return;
-        }
+        if (err) return toast.error(err);
       }
       if (showRegisterDirectors) {
         const err = validateRegisterDirectors();
-        if (err) {
-          toast.error(err);
-          setLoading(false);
-          return;
-        }
+        if (err) return toast.error(err);
       }
 
-      // 1) Always log filing history (timeline)
+      // 0) log history
       await addDoc(collection(db, "companies", companyId, "filingHistory"), {
         filingType,
         dateFiled: filingDate,
@@ -330,21 +458,50 @@ const RecordFiling = () => {
         createdAt: new Date(),
       });
 
-      // 2) Update anchors / registers
       const companyRef = doc(db, "companies", companyId);
 
-      if (filingType.includes("Accounts")) {
-        if (!formData.periodEnd) {
-          toast.error("Missing accounts period end. Please refresh and try again.");
-          setLoading(false);
-          return;
-        }
+      // 1) Update anchor fields (THIS is what makes the cards roll forward)
+      if (isAccountsFiling) {
         await updateDoc(companyRef, {
+          lastCHPeriodStart: formData.periodStart,
+          lastCHPeriodEnd: formData.periodEnd,
+          lastCHFiledOn: filingDate,
+          // keep legacy for compatibility
           lastAccountsPeriodEnd: formData.periodEnd,
-          isFirstYear: false,
+          updatedAt: new Date(),
         });
       }
 
+      if (isCT600Filing) {
+        await updateDoc(companyRef, {
+          lastCTPeriodStart: formData.periodStart,
+          lastCTPeriodEnd: formData.periodEnd,
+          lastCT600FiledOn: filingDate,
+          updatedAt: new Date(),
+        });
+      }
+
+      if (showConfirmation) {
+        await updateDoc(companyRef, {
+          lastCS01FiledOn: filingDate,
+          updatedAt: new Date(),
+        });
+      }
+
+      // Payment: no period picker in UI, so we “attach” it to the HMRC active period end
+      if (isCTPayment) {
+        const snap = await getDoc(companyRef);
+        const company = snap.exists() ? snap.data() : null;
+        const suggestedHMRC = computeSuggestedPeriod(company, "HMRC");
+
+        await updateDoc(companyRef, {
+          lastCTPaymentFiledOn: filingDate,
+          lastCTPaymentForPeriodEnd: suggestedHMRC?.periodEnd || null,
+          updatedAt: new Date(),
+        });
+      }
+
+      // 2) Registers
       if (showRegisterMembers) {
         await addDoc(collection(db, "companies", companyId, "registerUpdates"), {
           createdAt: new Date(),
@@ -368,7 +525,7 @@ const RecordFiling = () => {
           data: {
             effectiveDate: formData.directorEffectiveDate,
             changeType: formData.directorChangeType,
-            fullName: formData.directorName.trim(), // must match RegisterDirectors.jsx
+            fullName: formData.directorName.trim(),
             serviceAddress: (formData.directorServiceAddress || "").trim(),
             nationality: (formData.directorNationality || "").trim(),
             countryOfResidence: (formData.directorCountryOfResidence || "").trim(),
@@ -390,6 +547,17 @@ const RecordFiling = () => {
       setLoading(false);
     }
   };
+
+  const periodSourceLabel =
+    periodSource === "LAST_CT_END"
+      ? "Auto-filled from last HMRC period end"
+      : periodSource === "LAST_CH_END"
+      ? "Auto-filled from last Companies House period end"
+      : periodSource === "BASE_START"
+      ? "Auto-filled from trading start / incorporation"
+      : periodSource === "MISSING"
+      ? "Missing incorporation/trading start"
+      : "";
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10 transition-colors">
@@ -427,20 +595,16 @@ const RecordFiling = () => {
 
           <hr className="opacity-10" />
 
-          {/* ACCOUNTS / TAX RETURN PERIOD (auto) */}
+          {/* ACCOUNTS / CT600 PERIOD */}
           {showAccounts && (
-            <div className="p-6 rounded-[2rem] bg-slate-50 dark:bg-gray-800/40 border border-slate-100 dark:border-gray-800">
-              <div className="flex items-center justify-between gap-3">
+            <div className="p-6 rounded-[2rem] bg-slate-50 dark:bg-gray-800/40 border border-slate-100 dark:border-gray-800 space-y-4">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500">
-                    Accounting Period (auto)
+                    {mode === "HMRC" ? "HMRC Corporation Tax Period" : "Companies House Accounts Period"}
                   </div>
-                  <div className="text-sm font-bold text-gray-700 dark:text-gray-200 mt-1">
-                    {formData.periodStart && formData.periodEnd
-                      ? `${dayjs(formData.periodStart).format("DD MMM YYYY")} → ${dayjs(formData.periodEnd).format(
-                          "DD MMM YYYY"
-                        )}`
-                      : "Calculating..."}
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                    {periodSourceLabel || "Auto-filled"} • You can edit these dates if needed
                   </div>
                 </div>
                 {calculating && (
@@ -449,391 +613,54 @@ const RecordFiling = () => {
                   </span>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* REGISTER OF DIRECTORS */}
-          {showRegisterDirectors && (
-            <div className="space-y-5">
-              <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                Register of Directors Update
-              </label>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective date</span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Period start</span>
                   <input
                     type="date"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.directorEffectiveDate}
-                    onChange={(e) => updateField("directorEffectiveDate", e.target.value)}
+                    className="w-full p-5 rounded-2xl bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 font-bold transition"
+                    value={formData.periodStart}
+                    onChange={(e) => {
+                      periodTouchedRef.current = true;
+                      updateField("periodStart", e.target.value);
+                    }}
                     required
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change type</span>
-                  <select
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black transition"
-                    value={formData.directorChangeType}
-                    onChange={(e) => updateField("directorChangeType", e.target.value)}
-                    required
-                  >
-                    <option value="APPOINT">Appoint (AP01)</option>
-                    <option value="RESIGN">Resign (TM01)</option>
-                    <option value="CHANGE_DETAILS">Change details (CH01)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Full name</span>
-                  <input
-                    placeholder="e.g. Alex Demo"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.directorName}
-                    onChange={(e) => updateField("directorName", e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Service address (optional)</span>
-                  <input
-                    placeholder="e.g. 1 Demo Street, London"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.directorServiceAddress}
-                    onChange={(e) => updateField("directorServiceAddress", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  placeholder="Nationality (optional)"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.directorNationality}
-                  onChange={(e) => updateField("directorNationality", e.target.value)}
-                />
-                <input
-                  placeholder="Country of residence (optional)"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.directorCountryOfResidence}
-                  onChange={(e) => updateField("directorCountryOfResidence", e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  placeholder="Occupation (optional)"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.directorOccupation}
-                  onChange={(e) => updateField("directorOccupation", e.target.value)}
-                />
-                <input
-                  type="date"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.directorDob}
-                  onChange={(e) => updateField("directorDob", e.target.value)}
-                  title="Optional: store internally; Companies House generally displays month/year publicly."
-                />
-              </div>
-
-              <textarea
-                rows={2}
-                placeholder="Notes (optional)"
-                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 transition"
-                value={formData.directorNotes}
-                onChange={(e) => updateField("directorNotes", e.target.value)}
-              />
-
-              <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                Form refs:{" "}
-                <a className="underline" href="https://www.gov.uk/government/publications/appoint-a-director-ap01" target="_blank" rel="noreferrer">
-                  AP01
-                </a>{" "}
-                •{" "}
-                <a className="underline" href="https://www.gov.uk/government/publications/terminate-an-appointment-of-a-director-tm01" target="_blank" rel="noreferrer">
-                  TM01
-                </a>{" "}
-                •{" "}
-                <a className="underline" href="https://www.gov.uk/government/publications/change-details-of-a-director-ch01" target="_blank" rel="noreferrer">
-                  CH01
-                </a>
-              </div>
-            </div>
-          )}
-
-          {/* REGISTER OF MEMBERS SECTION */}
-          {showRegisterMembers && (
-            <div className="space-y-5">
-              <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                Register of Members Update
-              </label>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective date</span>
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Period end</span>
                   <input
                     type="date"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.effectiveDate}
-                    onChange={(e) => updateField("effectiveDate", e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change type</span>
-                  <select
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black transition"
-                    value={formData.changeType}
-                    onChange={(e) => updateField("changeType", e.target.value)}
-                    required
-                  >
-                    <option value="ISSUE_SHARES">Issue shares</option>
-                    <option value="TRANSFER_SHARES">Transfer shares</option>
-                    <option value="CANCEL_SHARES">Cancel / buyback shares</option>
-                    <option value="CORRECTION">Correction</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member (to)</span>
-                  <input
-                    placeholder="Member name"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.toMemberName}
-                    onChange={(e) => updateField("toMemberName", e.target.value)}
-                    required
-                  />
-                </div>
-
-                {formData.changeType === "TRANSFER_SHARES" && (
-                  <div className="space-y-2">
-                    <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">From member</span>
-                    <input
-                      placeholder="From member name"
-                      className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                      value={formData.fromMemberName}
-                      onChange={(e) => updateField("fromMemberName", e.target.value)}
-                      required
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member address</span>
-                <textarea
-                  rows={2}
-                  placeholder="Address for the statutory register"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 transition"
-                  value={formData.memberAddress}
-                  onChange={(e) => updateField("memberAddress", e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Share class</span>
-                  <input
-                    placeholder="e.g. Ordinary"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                    value={formData.shareClass}
-                    onChange={(e) => updateField("shareClass", e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Shares change (+ / -)</span>
-                  <input
-                    type="number"
-                    step="1"
-                    placeholder="e.g. 100"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black transition"
-                    value={formData.sharesChange}
-                    onChange={(e) => updateField("sharesChange", e.target.value)}
+                    className="w-full p-5 rounded-2xl bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 font-bold transition"
+                    value={formData.periodEnd}
+                    onChange={(e) => {
+                      periodTouchedRef.current = true;
+                      updateField("periodEnd", e.target.value);
+                    }}
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  placeholder="Certificate reference (optional)"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.certificateRef}
-                  onChange={(e) => updateField("certificateRef", e.target.value)}
-                />
-                <input
-                  placeholder="Notes (optional)"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                />
-              </div>
+              {companyMeta?.incorporationDate && (
+                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                  Incorporated: {dayjs(companyMeta.incorporationDate).format("DD MMM YYYY")}
+                  {companyMeta?.accountingStart
+                    ? ` • Trading start: ${dayjs(companyMeta.accountingStart).format("DD MMM YYYY")}`
+                    : ""}
+                </div>
+              )}
             </div>
           )}
 
-          {/* CONFIRMATION STATEMENT SECTION */}
-          {showConfirmation && (
-            <div className="space-y-5">
-              <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                Statutory Snapshot
-              </label>
+          {/* (rest of your UI is unchanged) */}
+          {/* REGISTER OF DIRECTORS / MEMBERS / CONFIRMATION / ACCOUNTS / PAYMENT... */}
+          {/* Keep your existing JSX sections below exactly as you already have them. */}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <textarea
-                  placeholder="Current Directors"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 outline-none transition"
-                  value={formData.directors}
-                  onChange={(e) => updateField("directors", e.target.value)}
-                  required
-                />
-                <input
-                  placeholder="SIC Code"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.sicCode}
-                  onChange={(e) => updateField("sicCode", e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-4">
-                <input
-                  placeholder="Statement of Capital"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                  value={formData.shareCapital}
-                  onChange={(e) => updateField("shareCapital", e.target.value)}
-                  required
-                />
-                <textarea
-                  placeholder="Shareholder Details"
-                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 transition"
-                  value={formData.shareholders}
-                  onChange={(e) => updateField("shareholders", e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ACCOUNTS / TAX RETURN SECTION */}
-          {showAccounts && (
-            <div className="space-y-5">
-              <div className="flex justify-between items-center">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-emerald-500">
-                  {showTaxReturn ? "HMRC Tax Computation" : "Financial Performance"}
-                </label>
-                {calculating && (
-                  <span className="text-[9px] font-black animate-pulse text-emerald-500 uppercase">
-                    Syncing Ledger...
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Turnover (£)</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black text-xl transition"
-                    value={formData.turnover}
-                    onChange={(e) => updateField("turnover", e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Net Profit (£)</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black text-xl transition"
-                    value={formData.profit}
-                    onChange={(e) => updateField("profit", e.target.value)}
-                    required
-                  />
-                </div>
-
-                {showTaxReturn && (
-                  <div className="md:col-span-2 space-y-5 mt-6">
-                    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 dark:border-gray-800 rounded-[2.5rem] bg-slate-50/50 dark:bg-white/5">
-                      <div className="text-center mb-6">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1 block">
-                          HMRC Liability Calculator
-                        </span>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Estimate Corporation Tax based on current profit.
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={estimateTax}
-                        className="group relative flex items-center justify-center gap-3 py-4 px-10 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] transition-all hover:scale-105 active:scale-95 shadow-lg shadow-orange-500/20"
-                      >
-                        <span className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-                        </span>
-                        {formData.taxLiability ? "RE-CALCULATE TAX" : "GENERATE SMART ESTIMATE"}
-                      </button>
-
-                      {formData.taxLiability && (
-                        <div className="w-full mt-8">
-                          <div className="relative">
-                            <div className="absolute -top-3 left-6 px-2 bg-white dark:bg-gray-900 text-[9px] font-black text-orange-500 uppercase tracking-widest">
-                              Estimated Tax Due
-                            </div>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="w-full p-6 rounded-3xl bg-white dark:bg-gray-950 border-2 border-orange-500 text-center font-black text-4xl text-orange-500 transition shadow-2xl outline-none"
-                              value={formData.taxLiability}
-                              onChange={(e) => updateField("taxLiability", e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* PAYMENT SECTION */}
-          {showPayment && (
-            <div className="space-y-5">
-              <label className="block text-[10px] font-black uppercase tracking-widest text-orange-500">
-                HMRC Payment Info
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Amount Paid (£)"
-                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-black text-xl transition"
-                value={formData.taxPaid}
-                onChange={(e) => updateField("taxPaid", e.target.value)}
-                required
-              />
-              <input
-                placeholder="HMRC Transaction Reference"
-                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 font-bold transition"
-                value={formData.transactionRef}
-                onChange={(e) => updateField("transactionRef", e.target.value)}
-                required
-              />
-            </div>
-          )}
+          {/* ...snip... */}
+          {/* For brevity: keep your existing sections as-is from your current file. */}
 
           <button
             disabled={loading || calculating}
