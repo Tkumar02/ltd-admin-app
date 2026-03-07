@@ -5,6 +5,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase/firebaseConfig";
 import getCompaniesByEmail from "../utils/getCompaniesByEmail";
 import useCurrentUser from "../utils/getCurrentUser";
+import { computeFilingsDeadlines } from "../utils/filingsDeadlines";
+import { fetchCompaniesHouseProfile, extractCHMarkers } from "../utils/companiesHouse";
 
 import {
   collection,
@@ -69,7 +71,8 @@ const computeActivePeriodEnd = (lastFiledEnd, baseStart) => {
 };
 
 // ---------- statuses ----------
-const getDeadlineStatus = ({ deadline, windowOpens }) => {
+const getDeadlineStatus = ({ deadline, windowOpens, statusOverride }) => {
+  if (statusOverride === "DORMANT") return { label: "DORMANT", style: STYLE.neutral };
   const today = dayjs();
   if (!deadline || !windowOpens) return { label: "NEEDS SETUP", style: STYLE.orange };
 
@@ -96,6 +99,10 @@ const Filings = () => {
   // History preview
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Companies House Sync
+  const [chMarkers, setChMarkers] = useState(null);
+  const [syncingCH, setSyncingCH] = useState(false);
 
   // Register meta/status
   const [registerMeta, setRegisterMeta] = useState({
@@ -137,7 +144,7 @@ const Filings = () => {
     else setSelectedCompanyId((prev) => prev || "");
   }, [companyId]);
 
-  // 3) History preview (last 10)
+  // 3) History preview
   useEffect(() => {
     if (!selectedCompanyId) {
       setHistory([]);
@@ -146,7 +153,8 @@ const Filings = () => {
 
     setLoadingHistory(true);
     const historyRef = collection(db, "companies", selectedCompanyId, "filingHistory");
-    const q1 = query(historyRef, orderBy("createdAt", "desc"), limit(10));
+    // Increase limit to be sure we see intermediate years
+    const q1 = query(historyRef, orderBy("createdAt", "desc"), limit(100));
 
     const unsub = onSnapshot(
       q1,
@@ -165,61 +173,61 @@ const Filings = () => {
     [companies, selectedCompanyId]
   );
 
-  // ---------- Build cards (roll-forward by anchor) ----------
+  // 4) Companies House Sync
+  useEffect(() => {
+    const sync = async () => {
+      if (!company?.number) {
+        setChMarkers(null);
+        return;
+      }
+      setSyncingCH(true);
+      try {
+        const profile = await fetchCompaniesHouseProfile(company.number);
+        const markers = extractCHMarkers(profile);
+        setChMarkers(markers);
+      } catch (e) {
+        console.error("CH Sync failed:", e);
+      } finally {
+        setSyncingCH(false);
+      }
+    };
+    sync();
+  }, [company?.number]);
+
+  // ---------- Build cards (centralized logic) ----------
   useEffect(() => {
     if (!company) {
       setCards([]);
       return;
     }
 
-    const today = dayjs();
-    const inc = asDayjs(company.incorporationDate);
-    const baseStart = computeBaseStart(company);
+    const todayISO = dayjs().format("YYYY-MM-DD");
+    const computedItems = computeFilingsDeadlines(company, todayISO, history, chMarkers);
 
-    // ===== CH Accounts (separate anchor) =====
+    // CH Accounts
     const lastCHFiledEnd = getLastCHPeriodEnd(company);
-    const chActivePeriodEnd = computeActivePeriodEnd(lastCHFiledEnd, baseStart);
     const chIsFirst = !lastCHFiledEnd;
+    const accountsItem = computedItems.find((i) => i.title.includes("Accounts"));
 
-    let accountsDeadline = null;
-    let accountsWindowOpens = null;
-    let accountsDesc = "Annual accounts.";
-    if (inc && chActivePeriodEnd) {
-      // NOTE: CH first accounts statutory deadline uses incorporation date (21 months)
-      accountsDeadline = chIsFirst ? inc.add(21, "month") : chActivePeriodEnd.add(9, "month");
-      accountsWindowOpens = chActivePeriodEnd.add(1, "day");
-      accountsDesc = `${chIsFirst ? "First" : "Next"} accounts for period ending ${chActivePeriodEnd.format(
-        "DD MMM YYYY"
-      )}.`;
-    }
+    // Confirmation Statement
+    const confItem = computedItems.find((i) => i.title.includes("Confirmation"));
 
-    // ===== Confirmation Statement =====
-    let confDeadline = null;
-    let confWindowOpens = null;
-    if (inc) {
-      const anniversary = inc.year(today.year());
-      confDeadline = anniversary.isBefore(today.subtract(1, "day"))
-        ? anniversary.add(1, "year").add(14, "day")
-        : anniversary.add(14, "day");
-      confWindowOpens = dayjs(confDeadline).subtract(14, "day");
-    }
-
-    // ===== HMRC CT (separate anchor) =====
-    const lastCTFiledEnd = getLastCTPeriodEnd(company);
-    const ctActivePeriodEnd = computeActivePeriodEnd(lastCTFiledEnd, baseStart);
-    const canComputeHMRC = !!ctActivePeriodEnd;
-
-    const ctPaymentDeadline = canComputeHMRC ? ctActivePeriodEnd.add(9, "month").add(1, "day") : null;
-    const ctReturnDeadline = canComputeHMRC ? ctActivePeriodEnd.add(12, "month") : null;
-    const ctWindowOpens = canComputeHMRC ? ctActivePeriodEnd.add(1, "day") : null;
+    // HMRC
+    const ctPaymentItem = computedItems.find((i) => i.title.includes("Tax Payment"));
+    const ct600Item = computedItems.find((i) => i.title.includes("CT600"));
 
     const baseFilings = [
       {
         kind: "FILING",
         key: "CS01",
-        title: "Confirmation Statement",
-        deadline: confDeadline,
-        windowOpens: confWindowOpens,
+        title: confItem?.title || "Confirmation Statement",
+        deadline: confItem?.deadline,
+        windowOpens: confItem?.windowOpens,
+        missingFilings: confItem?.missingFilings || [],
+        source: confItem?.source,
+        statusOverride: confItem?.statusOverride,
+        anchorDate: company.incorporationDate,
+        anchorLabel: "Inc. Date",
         desc: "Annual check of company details (CS01).",
         govLink: "https://www.gov.uk/file-your-confirmation-statement-with-companies-house",
         lastFiledOn: asDayjs(company.lastCS01FiledOn),
@@ -228,14 +236,18 @@ const Filings = () => {
       {
         kind: "FILING",
         key: "CH_ACCOUNTS",
-        title: "Annual Accounts",
-        deadline: accountsDeadline,
-        windowOpens: accountsWindowOpens,
-        desc: accountsDesc,
+        title: accountsItem?.title || "Annual Accounts",
+        deadline: accountsItem?.deadline,
+        windowOpens: accountsItem?.windowOpens,
+        missingFilings: accountsItem?.missingFilings || [],
+        source: accountsItem?.source,
+        statusOverride: accountsItem?.statusOverride,
+        desc: `${chIsFirst ? "First" : "Next"} accounts${
+          accountsItem?.deadline ? ` for period ending ${dayjs(accountsItem.deadline).subtract(9, "month").format("DD MMM YYYY")}` : " for the current period"
+        }.`,
         govLink: "https://www.gov.uk/file-your-company-accounts-and-tax-return",
         lastFiledOn: asDayjs(company.lastCHFiledOn),
         lastFiledPeriodEnd: lastCHFiledEnd,
-        activePeriodEnd: chActivePeriodEnd,
       },
     ];
 
@@ -243,30 +255,38 @@ const Filings = () => {
       {
         kind: "FILING",
         key: "CT_PAYMENT",
-        title: "Corporation Tax Payment",
-        deadline: ctPaymentDeadline,
-        windowOpens: ctWindowOpens,
-        desc: canComputeHMRC
-          ? `Tax due (9 months + 1 day after CT period end ${ctActivePeriodEnd.format("DD MMM YYYY")}).`
+        title: ctPaymentItem?.title || "Corporation Tax Payment",
+        deadline: ctPaymentItem?.deadline,
+        windowOpens: ctPaymentItem?.windowOpens,
+        missingFilings: ctPaymentItem?.missingFilings || [],
+        source: ctPaymentItem?.source,
+        statusOverride: ctPaymentItem?.statusOverride,
+        anchorDate: company.accountingStart,
+        anchorLabel: "Trading Start",
+        desc: ctPaymentItem?.deadline
+          ? `Corporation Tax payment due for period ending ${dayjs(ctPaymentItem.deadline).subtract(9, "month").subtract(1, "day").format("DD MMM YYYY")}.`
           : "Needs setup: add incorporation date / trading start.",
         govLink: "https://www.gov.uk/pay-corporation-tax",
         lastFiledOn: asDayjs(company.lastCTPaymentFiledOn),
         lastFiledPeriodEnd: asDayjs(company.lastCTPaymentForPeriodEnd) || null,
-        activePeriodEnd: ctActivePeriodEnd,
       },
       {
         kind: "FILING",
         key: "CT600",
-        title: "Company Tax Return (CT600)",
-        deadline: ctReturnDeadline,
-        windowOpens: ctWindowOpens,
-        desc: canComputeHMRC
-          ? `CT600 due 12 months after CT period end (${ctActivePeriodEnd.format("DD MMM YYYY")}).`
+        title: ct600Item?.title || "Company Tax Return (CT600)",
+        deadline: ct600Item?.deadline,
+        windowOpens: ct600Item?.windowOpens,
+        missingFilings: ct600Item?.missingFilings || [],
+        source: ct600Item?.source,
+        statusOverride: ct600Item?.statusOverride,
+        anchorDate: company.accountingStart,
+        anchorLabel: "Trading Start",
+        desc: ct600Item?.deadline
+          ? `CT600 filing due for period ending ${dayjs(ct600Item.deadline).subtract(12, "month").format("DD MMM YYYY")}.`
           : "Needs setup: add incorporation date / trading start.",
         govLink: "https://www.gov.uk/company-tax-returns",
         lastFiledOn: asDayjs(company.lastCT600FiledOn),
-        lastFiledPeriodEnd: lastCTFiledEnd,
-        activePeriodEnd: ctActivePeriodEnd,
+        lastFiledPeriodEnd: getLastCTPeriodEnd(company),
       },
     ];
 
@@ -276,8 +296,13 @@ const Filings = () => {
       desc: registerMeta.desc,
     };
 
-    setCards([registerCard, ...baseFilings, ...(canComputeHMRC ? hmrcCards : [])]);
-  }, [company, registerMeta.desc]);
+    const showHMRC =
+      (company?.accountingStart && dayjs(company.accountingStart).isBefore(dayjs(), "day")) ||
+      !!company?.lastAccountsPeriodEnd ||
+      !!company?.lastCTPeriodEnd;
+
+    setCards([registerCard, ...baseFilings, ...(showHMRC ? hmrcCards : [])]);
+  }, [company, registerMeta.desc, history, chMarkers]);
 
   // ---------- Fetch register status meta ----------
   useEffect(() => {
@@ -536,6 +561,31 @@ const Filings = () => {
                         className={`relative p-6 md:p-8 rounded-[2rem] border-l-[16px] shadow-sm flex flex-col justify-between transition-all hover:translate-y-[-4px] ${status.style}`}
                       >
                         <div className="mb-6">
+                          {item.missingFilings && item.missingFilings.length > 0 && (
+                            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 mb-1">
+                                ⚠️ Missing records for:
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {item.missingFilings.map((m, i) => {
+                                  const params = new URLSearchParams();
+                                  if (m.periodStart) params.set("periodStart", m.periodStart);
+                                  if (m.periodEnd) params.set("periodEnd", m.periodEnd);
+                                  if (m.date) params.set("filingDate", m.date);
+
+                                  return (
+                                    <button
+                                      key={i}
+                                      onClick={() => navigate(`/record-filing/${selectedCompanyId}/${item.title}?${params.toString()}`)}
+                                      className="text-[9px] font-black uppercase tracking-tighter bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700 transition"
+                                    >
+                                      {m.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
                             <div className="w-fit">
                               <span className="text-[10px] font-black tracking-widest uppercase px-3 py-1 rounded-full border border-current inline-block">
@@ -550,6 +600,12 @@ const Filings = () => {
                                   : `${daysRemaining} days left`}
                               </span>
                             )}
+
+                            {item.anchorDate && (
+                              <span className="text-[10px] font-bold opacity-80 uppercase tracking-tighter sm:text-right flex items-center gap-1">
+                                <span className="opacity-60">{item.anchorLabel}:</span> {dayjs(item.anchorDate).format("DD MMM YYYY")}
+                              </span>
+                            )}
                           </div>
 
                           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
@@ -559,6 +615,15 @@ const Filings = () => {
                           <p className="text-3xl md:text-4xl font-black text-gray-950 dark:text-white tracking-tighter mb-2">
                             {item.deadline ? dayjs(item.deadline).format("DD MMM YYYY") : "—"}
                           </p>
+
+                          {item.source && (
+                            <div className="text-[9px] font-bold uppercase tracking-widest text-blue-500 mb-3 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                              {item.source === "incorporation" || item.source === "trading start" 
+                                ? `Estimated from ${item.source}` 
+                                : `Calculated from ${item.source}`}
+                            </div>
+                          )}
 
                           {/* NEW: show "last filed" context so users can see it's been completed previously */}
                           {(item.lastFiledOn || item.lastFiledPeriodEnd) && (

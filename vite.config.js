@@ -14,4 +14,13 @@ export default defineConfig({
     }),
     tailwindcss(),
   ],
+  server: {
+    proxy: {
+      '/api-ch': {
+        target: 'https://api.company-information.service.gov.uk',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-ch/, ''),
+      },
+    },
+  },
 })

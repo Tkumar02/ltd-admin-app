@@ -15,6 +15,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import dayjs from "dayjs";
 import "react-toastify/dist/ReactToastify.css";
+import { fetchCompaniesHouseProfile, extractCHMarkers } from "../utils/companiesHouse";
 
 const CompanyScreen = () => {
   const navigate = useNavigate();
@@ -35,11 +36,13 @@ const CompanyScreen = () => {
 
   // ✅ Manual toggle
   const [hasFiledBefore, setHasFiledBefore] = useState(false);
+  const [isDormant, setIsDormant] = useState(false);
+// ✅ Single anchor: ARD (Accounts made up to / period end)
+const [accountsPeriodEndARD, setAccountsPeriodEndARD] = useState("");
 
-  // ✅ Single anchor: ARD (Accounts made up to / period end)
-  const [accountsPeriodEndARD, setAccountsPeriodEndARD] = useState("");
+const [syncing, setSyncing] = useState(false);
 
-  const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [hasFiledBefore]);
+const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [hasFiledBefore]);
 
   const fetchCompanies = async () => {
     setLoading(true);
@@ -59,11 +62,56 @@ const CompanyScreen = () => {
     }
   };
 
-  useEffect(() => {
-    fetchCompanies();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const handleCHSync = async () => {
+  if (!number || number.length < 8) {
+    toast.warn("Please enter a valid 8-digit Company Number first.");
+    return;
+  }
 
+  setSyncing(true);
+  try {
+    const profile = await fetchCompaniesHouseProfile(number);
+    if (!profile) {
+      toast.error("Company not found or API error.");
+      return;
+    }
+
+    const markers = extractCHMarkers(profile);
+
+    if (markers.companyName) setName(markers.companyName);
+    if (markers.incorporationDate) setIncorporationDate(markers.incorporationDate);
+
+    // Attempt to format address from CH
+    if (profile.registered_office_address) {
+      const addr = profile.registered_office_address;
+      const parts = [
+        addr.address_line_1,
+        addr.address_line_2,
+        addr.locality,
+        addr.postal_code
+      ].filter(Boolean);
+      setAddress(parts.join(", "));
+    }
+
+    // If they have established accounts, auto-set ARD
+    if (markers.lastAccountsEnd) {
+      setHasFiledBefore(true);
+      setAccountsPeriodEndARD(markers.lastAccountsEnd);
+    }
+
+    toast.success("Synced with Companies House!");
+  } catch (error) {
+    console.error(error);
+    toast.error("Sync failed.");
+  } finally {
+    setSyncing(false);
+  }
+  };
+
+  useEffect(() => {
+  fetchCompanies();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const resetForm = () => {
     setSelectedId(null);
     setName("");
@@ -83,6 +131,7 @@ const CompanyScreen = () => {
     setAddress(company.address || "");
     setIncorporationDate(company.incorporationDate || "");
     setAccountingStart(company.accountingStart || "");
+    setIsDormant(!!company.isDormant);
 
     // Try to infer existing ARD from whatever you have stored (new or legacy)
     const existingARD =
@@ -208,6 +257,7 @@ const CompanyScreen = () => {
 
         // ✅ manual toggle persisted
         hasFiledBefore,
+        isDormant,
 
         // ✅ single anchor saved everywhere (keeps CH + HMRC aligned)
         lastAccountsPeriodEnd: ard, // legacy back-compat
@@ -372,12 +422,22 @@ const CompanyScreen = () => {
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">
                   CRN Number
                 </label>
-                <input
-                  className="w-full p-4 bg-slate-50 dark:bg-[#1A1F2B] border border-slate-200 dark:border-slate-800 rounded-2xl outline-none text-slate-900 dark:text-white"
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value)}
-                  required
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 p-4 bg-slate-50 dark:bg-[#1A1F2B] border border-slate-200 dark:border-slate-800 rounded-2xl outline-none text-slate-900 dark:text-white"
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCHSync}
+                    disabled={syncing}
+                    className="px-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:opacity-80 transition-all disabled:opacity-50"
+                  >
+                    {syncing ? "..." : "Sync"}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -410,29 +470,43 @@ const CompanyScreen = () => {
             </div>
 
             {/* ✅ Manual toggle */}
-            <div className="p-6 rounded-[2rem] bg-white dark:bg-[#121721] border border-slate-200/60 dark:border-slate-800">
-              <label className="flex items-center gap-3 select-none cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={hasFiledBefore}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setHasFiledBefore(next);
-                    if (!next) setAccountsPeriodEndARD(""); // keep clean Year 1 state
-                  }}
-                />
-                <span className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
-                  This company has filed before
-                </span>
-              </label>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                If checked, we’ll ask for the Accounts Reference Date (ARD) and use it as the single anchor for both
-                Companies House accounts and HMRC CT600 periods.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-6 rounded-[2rem] bg-white dark:bg-[#121721] border border-slate-200/60 dark:border-slate-800">
+                <label className="flex items-center gap-3 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={hasFiledBefore}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setHasFiledBefore(next);
+                      if (!next) setAccountsPeriodEndARD(""); // keep clean Year 1 state
+                    }}
+                  />
+                  <span className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
+                    Established
+                  </span>
+                </label>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 uppercase font-bold">
+                  This company has filed before.
+                </p>
+              </div>
 
-              <div className="pt-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">
-                Status: {statusLabel}
+              <div className="p-6 rounded-[2rem] bg-white dark:bg-[#121721] border border-slate-200/60 dark:border-slate-800">
+                <label className="flex items-center gap-3 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={isDormant}
+                    onChange={(e) => setIsDormant(e.target.checked)}
+                  />
+                  <span className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                    Dormant Mode
+                  </span>
+                </label>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 uppercase font-bold">
+                  Company is not trading.
+                </p>
               </div>
             </div>
 

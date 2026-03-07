@@ -76,16 +76,22 @@ const RecordFiling = () => {
   const navigate = useNavigate();
   const hasToasted = useRef(false);
 
+  // Extract deep-link params
+  const queryParams = new URLSearchParams(window.location.search);
+  const deepPeriodStart = queryParams.get("periodStart");
+  const deepPeriodEnd = queryParams.get("periodEnd");
+  const deepFilingDate = queryParams.get("filingDate");
+
   const [certInfo, setCertInfo] = useState(null);
   const [generatingCert, setGeneratingCert] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
-  const [filingDate, setFilingDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [filingDate, setFilingDate] = useState(deepFilingDate || dayjs().format("YYYY-MM-DD"));
 
   const [companyMeta, setCompanyMeta] = useState(null);
-  const [periodSource, setPeriodSource] = useState("");
-  const periodTouchedRef = useRef(false);
+  const [periodSource, setPeriodSource] = useState(deepPeriodEnd ? "MANUAL_DEEP_LINK" : "");
+  const periodTouchedRef = useRef(!!deepPeriodEnd);
 
   const [formData, setFormData] = useState({
     // Confirmation Statement
@@ -95,8 +101,8 @@ const RecordFiling = () => {
     shareholders: "",
 
     // Accounts / Tax Return
-    periodStart: "",
-    periodEnd: "",
+    periodStart: deepPeriodStart || "",
+    periodEnd: deepPeriodEnd || "" ,
     turnover: "",
     profit: "",
     taxLiability: "",
@@ -211,18 +217,20 @@ const RecordFiling = () => {
         // ===== A) Financial filings (Accounts / CT600) =====
         if (showAccounts) {
           const suggested = computeSuggestedPeriod(company, mode);
-          setPeriodSource(suggested.source);
-
-          if (!periodTouchedRef.current) {
-            setFormData((prev) => ({
-              ...prev,
-              periodStart: suggested.periodStart,
-              periodEnd: suggested.periodEnd,
-            }));
+          
+          if (periodSource !== "MANUAL_DEEP_LINK") {
+            setPeriodSource(suggested.source);
+            if (!periodTouchedRef.current) {
+              setFormData((prev) => ({
+                ...prev,
+                periodStart: suggested.periodStart,
+                periodEnd: suggested.periodEnd,
+              }));
+            }
           }
 
-          const periodStart = dayjs(periodTouchedRef.current ? formData.periodStart : suggested.periodStart);
-          const periodEnd = dayjs(periodTouchedRef.current ? formData.periodEnd : suggested.periodEnd);
+          const periodStart = dayjs(formData.periodStart || suggested.periodStart);
+          const periodEnd = dayjs(formData.periodEnd || suggested.periodEnd);
 
           if (!periodStart.isValid() || !periodEnd.isValid()) {
             setCalculating(false);
@@ -549,7 +557,9 @@ const RecordFiling = () => {
   };
 
   const periodSourceLabel =
-    periodSource === "LAST_CT_END"
+    periodSource === "MANUAL_DEEP_LINK"
+      ? "Pre-filled for a specific missing period"
+      : periodSource === "LAST_CT_END"
       ? "Auto-filled from last HMRC period end"
       : periodSource === "LAST_CH_END"
       ? "Auto-filled from last Companies House period end"

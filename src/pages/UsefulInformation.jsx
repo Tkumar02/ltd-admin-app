@@ -66,15 +66,21 @@ const CompanyDashboard = () => {
     if (!incDate) return [];
 
     const inc = dayjs(incDate);
+    const trading = tradingDate ? dayjs(tradingDate) : null;
 
     // Confirmation Statement (anniversary + 14 days)
     const anniversary = inc.year(today.year());
-    const confDeadline = anniversary.isBefore(today.subtract(1, "day"))
-      ? anniversary.add(1, "year").add(14, "day")
-      : anniversary.add(14, "day");
+    let confDeadline = anniversary.add(14, "day");
+
+    // If the deadline for THIS year has already passed, show NEXT year's
+    if (confDeadline.isBefore(today, "day")) {
+      confDeadline = anniversary.add(1, "year").add(14, "day");
+    }
 
     // Accounts anchor
-    const periodEndAnchor = hasPeriodEnd ? dayjs(lastAccountsPeriodEnd) : null;
+    const periodEndAnchor = hasPeriodEnd 
+      ? dayjs(lastAccountsPeriodEnd) 
+      : (trading ? trading.add(1, "year") : null);
 
     // Accounts deadline:
     // - First accounts: 21 months from incorporation
@@ -84,6 +90,8 @@ const CompanyDashboard = () => {
 
     if (!hasPeriodEnd) {
       accountsDeadline = inc.add(21, "month");
+      // For estimation purposes in the UI if trading is set
+      nextPeriodEnd = periodEndAnchor;
     } else {
       nextPeriodEnd = periodEndAnchor.add(1, "year");
       accountsDeadline = nextPeriodEnd.add(9, "month");
@@ -103,7 +111,7 @@ const CompanyDashboard = () => {
         title: "Annual Accounts",
         date: accountsDeadline,
         desc: !hasPeriodEnd
-          ? "First accounts deadline (21 months from incorporation)."
+          ? `First accounts deadline (21 months from incorporation).${nextPeriodEnd ? ` Estimated period end: ${nextPeriodEnd.format("DD MMM YYYY")}` : ""}`
           : `Accounts for period ending ${nextPeriodEnd.format("DD MMM YYYY")}.`,
         issuer: "Companies House",
         link: "https://www.gov.uk/file-your-company-annual-accounts",
@@ -112,15 +120,17 @@ const CompanyDashboard = () => {
 
     // HMRC: show only if trading started
     if (tradingStarted) {
-      // Register for Corporation Tax (quick-view reminder)
-      items.push({
-        id: "hmrc_reg",
-        title: "Register for Corporation Tax",
-        date: dayjs(tradingDate).add(3, "month"),
-        desc: "Typical guidance: tell HMRC within 3 months of starting to trade.",
-        issuer: "HMRC",
-        link: "https://www.gov.uk/limited-company-formation/add-corporation-tax-services-to-business-tax-account",
-      });
+      // Register for Corporation Tax (quick-view reminder) - hide if they've already set an ARD
+      if (!hasPeriodEnd) {
+        items.push({
+          id: "hmrc_reg",
+          title: "Register for Corporation Tax",
+          date: dayjs(tradingDate).add(3, "month"),
+          desc: "Typical guidance: tell HMRC within 3 months of starting to trade.",
+          issuer: "HMRC",
+          link: "https://www.gov.uk/limited-company-formation/add-corporation-tax-services-to-business-tax-account",
+        });
+      }
 
       if (nextPeriodEnd) {
         items.push(
@@ -128,7 +138,7 @@ const CompanyDashboard = () => {
             id: "hmrc_pay",
             title: "Corporation Tax Payment",
             date: nextPeriodEnd.add(9, "month").add(1, "day"),
-            desc: "Corporation Tax due (9 months + 1 day after period end).",
+            desc: `Corporation Tax due (9 months + 1 day after ${hasPeriodEnd ? "" : "estimated "}period end ${nextPeriodEnd.format("DD MMM YYYY")}).`,
             issuer: "HMRC",
             link: "https://www.gov.uk/pay-corporation-tax",
           },
@@ -136,7 +146,7 @@ const CompanyDashboard = () => {
             id: "hmrc_ct600",
             title: "Submit CT600 (Company Tax Return)",
             date: nextPeriodEnd.add(12, "month"),
-            desc: "Company Tax Return due (12 months after period end).",
+            desc: `Company Tax Return due (12 months after ${hasPeriodEnd ? "" : "estimated "}period end ${nextPeriodEnd.format("DD MMM YYYY")}).`,
             issuer: "HMRC",
             link: "https://www.gov.uk/file-your-company-accounts-and-tax-return",
           }
@@ -182,6 +192,55 @@ const CompanyDashboard = () => {
   const handleCheck = (id) => setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const showSetupNeededTag = tradingStarted && !hasPeriodEnd;
+
+  const assumedPeriodEnd = useMemo(() => {
+    if (tradingDate && !hasPeriodEnd) {
+      return dayjs(tradingDate).add(1, "year").format("DD MMM YYYY");
+    }
+    return null;
+  }, [tradingDate, hasPeriodEnd]);
+
+  // --- Companies House API Lookup ---
+  const [chNumber, setChNumber] = useState("");
+  const [fetchingCH, setFetchingCH] = useState(false);
+
+  const fetchCHData = async () => {
+    if (!chNumber || chNumber.length < 8) {
+      alert("Please enter a valid 8-digit Company Number.");
+      return;
+    }
+
+    setFetchingCH(true);
+    try {
+      const apiKey = "a5c51b89-ed23-4bcd-aa7c-d4644d54dc0e";
+      const encodedKey = btoa(apiKey + ":");
+
+      const response = await fetch(`/api-ch/company/${chNumber}`, {
+        headers: {
+          "Authorization": `Basic ${encodedKey}`
+        }
+      });
+      if (!response.ok) throw new Error("Company not found or API error.");
+
+      const data = await response.json();
+      
+      if (data.date_of_creation) setIncDate(data.date_of_creation);
+      
+      if (data.accounts?.last_accounts?.made_up_to) {
+        setLastAccountsPeriodEnd(data.accounts.last_accounts.made_up_to);
+      } else if (data.accounts?.next_accounts?.period_end_on) {
+        const nextEnd = dayjs(data.accounts.next_accounts.period_end_on);
+        setLastAccountsPeriodEnd(nextEnd.subtract(1, "year").format("YYYY-MM-DD"));
+      }
+
+      alert(`Fetched data for ${data.company_name}. Dates updated!`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to fetch data from Companies House. Check the number or API key.");
+    } finally {
+      setFetchingCH(false);
+    }
+  };
 
   return (
     <div className="container">
@@ -370,6 +429,47 @@ const CompanyDashboard = () => {
           font-size: 0.85rem;
           line-height: 1.4;
         }
+
+        /* CH Lookup Styles */
+        .chLookup {
+          background: #000;
+          color: #fff;
+          padding: 20px;
+          border-radius: 12px;
+          margin-bottom: 30px;
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
+        @media (min-width: 600px) {
+          .chLookup {
+            flex-direction: row;
+            align-items: flex-end;
+          }
+        }
+        .chLookup input {
+          flex: 1;
+          padding: 12px;
+          border-radius: 8px;
+          border: 1px solid #333;
+          background: #111;
+          color: #fff;
+          font-weight: bold;
+          text-transform: uppercase;
+        }
+        .chLookup button {
+          background: #fff;
+          color: #000;
+          border: none;
+          padding: 12px 24px;
+          border-radius: 8px;
+          font-weight: 900;
+          text-transform: uppercase;
+          cursor: pointer;
+          transition: transform 0.1s;
+        }
+        .chLookup button:active { transform: scale(0.98); }
+        .chLookup button:disabled { opacity: 0.5; }
       `}</style>
 
       <header className="topBar">
@@ -382,6 +482,23 @@ const CompanyDashboard = () => {
           </button>
         </div>
       </header>
+
+      {/* NEW: CH API Lookup */}
+      <section className="chLookup">
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: "0.7rem", fontWeight: 900, textTransform: "uppercase", marginBottom: "8px", display: "block", color: "#aaa" }}>
+            Companies House Sync
+          </label>
+          <input 
+            placeholder="Company number" 
+            value={chNumber}
+            onChange={(e) => setChNumber(e.target.value)}
+          />
+        </div>
+        <button onClick={fetchCHData} disabled={fetchingCH}>
+          {fetchingCH ? "Syncing..." : "Fetch Details"}
+        </button>
+      </section>
 
       <div className="input-grid">
         <div>
@@ -415,9 +532,24 @@ const CompanyDashboard = () => {
         {/* LEFT: deadlines */}
         <section>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-            <h2 style={{ fontSize: "1.2rem" }}>Deadlines</h2>
-            {tradingStarted && !hasPeriodEnd && <span className="pill">Add period end for CT dates</span>}
+            <h2 style={{ fontSize: "1.2rem" }}>Upcoming Deadlines</h2>
+            {tradingStarted && !hasPeriodEnd && <span className="pill">Using estimated period end</span>}
           </div>
+
+          {assumedPeriodEnd && (
+            <div style={{ 
+                marginBottom: "20px", 
+                padding: "12px 16px", 
+                backgroundColor: "rgba(29, 112, 184, 0.1)", 
+                border: "1px solid var(--accent-blue)", 
+                borderRadius: "10px",
+                fontSize: "0.85rem",
+                fontWeight: "600",
+                color: "var(--accent-blue)"
+            }}>
+                💡 Assuming accounts period end is: 12 months + {assumedPeriodEnd} (based on trading start)
+            </div>
+          )}
 
           {!incDate ? (
             <p style={{ color: "var(--muted-text)", textAlign: "center", padding: "20px" }}>

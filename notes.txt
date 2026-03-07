@@ -29,3 +29,41 @@ Confirmation Stmt,    15 Jan 2025,              15 Jan 2026,            Same eve
 Annual Accounts,      01 Oct 2025,              31 Oct 2026,            Dropped from 21m to 9m
 Tax Payment,          01 Nov 2025,              01 Nov 2026,            9m + 1 day after YE
 Tax Return,           31 Jan 2026,              31 Jan 2027,            12m after YE
+
+ > /quit
+╭───────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                               │
+│  Agent powering down. Goodbye!                                                                │
+│                                                                                               │
+│  Interaction Summary                                                                          │
+│  Session ID:                 6ad15ad2-4507-4bbc-9ff0-513ec0475501                             │
+│  Tool Calls:                 25 ( ✓ 22 x 3 )                                                  │
+│  Success Rate:               88.0%                                                            │
+│  User Agreement:             100.0% (25 reviewed)                                             │
+│  Code Changes:               +138 -87                                                         │
+│                                                                                               │
+│  Performance                                                                                  │
+│  Wall Time:                  56m 25s                                                          │
+│  Agent Active:               19m 14s                                                          │
+│    » API Time:               11m 54s (61.9%)                                                  │
+│    » Tool Time:              7m 19s (38.1%)                                                   │
+│                                                                                               │
+│  Model Usage                                                                                  │
+│  Model                       Reqs   Input Tokens   Cache Reads  Output Tokens                 │
+│  ────────────────────────────────────────────────────────────────────────────                 │
+│  gemini-2.5-flash-lite         12         55,539             0            944                 │
+│  gemini-3-flash-preview        38        367,346       818,070         20,793                 │
+│                                                                                               │
+│  Savings Highlight: 818,070 (65.9%) of input tokens were served from the cache, reducing      │
+│  costs.                                                                                       │
+│                                                                                               │
+│  Tip: Resume a previous session using gemini --resume or /resume                              │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ta@Mac ltd-admin-app % 
+
+
+To fire it back up, just head to your project directory in the terminal and type:
+
+Bash
+gemini
