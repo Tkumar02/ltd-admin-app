@@ -139,9 +139,10 @@ const DemoTools = () => {
     }
   };
 
-  const seedFilingsAndRegisters = async ({ seedId, companyId, inc, lastPeriodEnd }) => {
+  const seedFilingsAndRegisters = async ({ seedId, companyId, companyName, inc, lastPeriodEnd }) => {
     const filingHistoryRef = collection(db, "companies", companyId, "filingHistory");
     const registerRef = collection(db, "companies", companyId, "registerUpdates");
+    const certsRef = collection(db, "companies", companyId, "shareCertificates");
 
     // Seed confirmation statements (annual-ish)
     for (let y = 0; y < years; y++) {
@@ -181,20 +182,40 @@ const DemoTools = () => {
       });
     }
 
-    // Seed a register update
+    // Seed a share certificate
+    const certDate = inc.add(1, "month");
+    const certRef = await addDoc(certsRef, {
+      demoSeed: true,
+      demoSeedId: seedId,
+      createdAt: serverTimestamp(),
+      companyId,
+      companyName,
+      companyNumber: "12345678",
+      certificateNumber: `CERT-DEMO-${seedId.slice(0, 4)}-001`,
+      issueDate: certDate.format("YYYY-MM-DD"),
+      memberName: "Demo Shareholder",
+      memberAddress: "1 Demo Street, London, UK",
+      shareClass: "Ordinary",
+      shares: 100,
+      notes: "Initial issuance (demo seed)",
+      status: "ISSUED",
+    });
+
+    // Seed a register update linked to the certificate
     await addDoc(registerRef, {
       demoSeed: true,
       demoSeedId: seedId,
       createdAt: serverTimestamp(),
       data: {
-        effectiveDate: inc.add(1, "month").format("YYYY-MM-DD"),
+        effectiveDate: certDate.format("YYYY-MM-DD"),
         changeType: "ISSUE_SHARES",
         toMemberName: "Demo Shareholder",
         fromMemberName: "",
         memberAddress: "1 Demo Street, London, UK",
         shareClass: "Ordinary",
         sharesChange: 100,
-        certificateRef: "CERT-001",
+        certificateRef: `CERT-DEMO-${seedId.slice(0, 4)}-001`,
+        certificateId: certRef.id,
         notes: "Initial issuance (demo)",
       },
     });
@@ -213,7 +234,7 @@ const DemoTools = () => {
       const { companyId, companyName, inc, lastPeriodEnd } = await ensureDemoCompany({ seedId });
 
       await seedLedgerAndRevenueAndInvoices({ seedId, companyId, companyName });
-      await seedFilingsAndRegisters({ seedId, companyId, inc, lastPeriodEnd });
+      await seedFilingsAndRegisters({ seedId, companyId, companyName, inc, lastPeriodEnd });
 
       toast.success(`Demo data created ✅ (seed ${seedId})`);
     } catch (e) {
@@ -264,6 +285,11 @@ const DemoTools = () => {
           query(collection(db, "companies", companyId, "registerUpdates"), where("demoSeed", "==", true))
         );
         regSnap.docs.forEach((d) => batch.delete(d.ref));
+
+        const certSnap = await getDocs(
+          query(collection(db, "companies", companyId, "shareCertificates"), where("demoSeed", "==", true))
+        );
+        certSnap.docs.forEach((d) => batch.delete(d.ref));
 
         // delete company doc last
         batch.delete(c.ref);

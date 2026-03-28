@@ -82,6 +82,12 @@ const extractCertificateRef = (d) =>
     d?.certificateRef ||
     "")?.trim();
 
+const extractCertificateId = (d) =>
+  d?.data?.certificateId ||
+  d?.submissionDetails?.certificateId ||
+  d?.certificateId ||
+  "";
+
 const extractNotes = (d) =>
   (d?.data?.notes || d?.submissionDetails?.notes || d?.notes || "")?.trim();
 
@@ -173,6 +179,7 @@ const RegisterMembers = () => {
           ceasedMemberOn: null,
           address: "",
           certificateRefs: new Set(),
+          certificateIds: new Map(), // map ref -> id
           lastEventOn: null,
         });
       }
@@ -193,6 +200,7 @@ const RegisterMembers = () => {
           fromMember: extractFromMember(u),
           address: extractMemberAddress(u),
           certificateRef: extractCertificateRef(u),
+          certificateId: extractCertificateId(u),
           notes: extractNotes(u),
           createdAtISO: toISO(u.createdAt),
         };
@@ -217,7 +225,10 @@ const RegisterMembers = () => {
         // address: keep last known non-empty
         if (e.address) row.address = e.address;
 
-        if (e.certificateRef) row.certificateRefs.add(e.certificateRef);
+        if (e.certificateRef) {
+          row.certificateRefs.add(e.certificateRef);
+          if (e.certificateId) row.certificateIds.set(e.certificateRef, e.certificateId);
+        }
 
         // became member: first transition from 0 to >0
         if (!row.becameMemberOn && before <= 0 && row.shares > 0) {
@@ -250,7 +261,10 @@ const RegisterMembers = () => {
         row.shares += delta;
 
         if (e.address) row.address = e.address;
-        if (e.certificateRef) row.certificateRefs.add(e.certificateRef);
+        if (e.certificateRef) {
+          row.certificateRefs.add(e.certificateRef);
+          if (e.certificateId) row.certificateIds.set(e.certificateRef, e.certificateId);
+        }
 
         if (!row.becameMemberOn && before <= 0 && row.shares > 0) {
           row.becameMemberOn = when;
@@ -273,6 +287,7 @@ const RegisterMembers = () => {
       .map((r) => ({
         ...r,
         certificateRefs: Array.from(r.certificateRefs),
+        certificateIds: Object.fromEntries(r.certificateIds),
       }))
       .sort((a, b) => (a.memberName || "").localeCompare(b.memberName || ""));
 
@@ -387,8 +402,26 @@ const RegisterMembers = () => {
                         <td className="p-6">
                           <div className="font-black text-slate-900 dark:text-white">{r.memberName}</div>
                           {!!r.certificateRefs?.length && (
-                            <div className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                              Cert: {r.certificateRefs.join(", ")}
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {r.certificateRefs.map((ref) => {
+                                const id = r.certificateIds[ref];
+                                if (!id) {
+                                  return (
+                                    <span key={ref} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                      Cert: {ref}
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    key={ref}
+                                    onClick={() => navigate(`/companies/${companyId}/certificates/${id}`)}
+                                    className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest hover:underline"
+                                  >
+                                    📜 {ref}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </td>
@@ -506,6 +539,16 @@ const RegisterMembers = () => {
                             Class: <span className="font-bold">{e.shareClass}</span> • Change:{" "}
                             <span className="font-black">{e.sharesChange}</span>
                             {e.certificateRef ? ` • Ref: ${e.certificateRef}` : ""}
+                            {e.certificateId && (
+                              <button
+                                onClick={() =>
+                                  navigate(`/companies/${companyId}/certificates/${e.certificateId}`)
+                                }
+                                className="ml-2 text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
+                              >
+                                View Cert 📜
+                              </button>
+                            )}
                           </div>
 
                           {e.notes && (

@@ -522,6 +522,7 @@ const RecordFiling = () => {
             shareClass: formData.shareClass.trim(),
             sharesChange: Number(formData.sharesChange || 0),
             certificateRef: (formData.certificateRef || "").trim(),
+            certificateId: certInfo?.certificateId || "",
             notes: (formData.notes || "").trim(),
           },
         });
@@ -654,6 +655,53 @@ const RecordFiling = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Turnover (£)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full p-5 rounded-2xl bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 font-bold transition"
+                    value={formData.turnover}
+                    onChange={(e) => updateField("turnover", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Profit (£)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full p-5 rounded-2xl bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 font-bold transition"
+                    value={formData.profit}
+                    onChange={(e) => updateField("profit", e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              {showTaxReturn && (
+                <div className="pt-4 border-t border-slate-100 dark:border-gray-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Tax Liability (£)</span>
+                    <button
+                      type="button"
+                      onClick={estimateTax}
+                      className="text-[9px] font-black text-indigo-500 uppercase tracking-widest hover:underline"
+                    >
+                      Estimate Tax ⚖️
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full p-5 rounded-2xl bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 font-bold transition text-indigo-600 dark:text-indigo-400"
+                    value={formData.taxLiability}
+                    onChange={(e) => updateField("taxLiability", e.target.value)}
+                  />
+                </div>
+              )}
+
               {companyMeta?.incorporationDate && (
                 <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   Incorporated: {dayjs(companyMeta.incorporationDate).format("DD MMM YYYY")}
@@ -665,12 +713,302 @@ const RecordFiling = () => {
             </div>
           )}
 
-          {/* (rest of your UI is unchanged) */}
-          {/* REGISTER OF DIRECTORS / MEMBERS / CONFIRMATION / ACCOUNTS / PAYMENT... */}
-          {/* Keep your existing JSX sections below exactly as you already have them. */}
+          {/* CONFIRMATION STATEMENT */}
+          {showConfirmation && (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Current Directors</label>
+                <textarea
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  rows="2"
+                  value={formData.directors}
+                  onChange={(e) => updateField("directors", e.target.value)}
+                  placeholder="Full names of all directors"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">SIC Code(s)</label>
+                <input
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  value={formData.sicCode}
+                  onChange={(e) => updateField("sicCode", e.target.value)}
+                  placeholder="e.g. 62012"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Share Capital (£)</label>
+                  <input
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.shareCapital}
+                    onChange={(e) => updateField("shareCapital", e.target.value)}
+                    placeholder="e.g. £100.00"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Shareholders</label>
+                  <input
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.shareholders}
+                    onChange={(e) => updateField("shareholders", e.target.value)}
+                    placeholder="e.g. 100 Ordinary"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* ...snip... */}
-          {/* For brevity: keep your existing sections as-is from your current file. */}
+          {/* TAX PAYMENT */}
+          {showPayment && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Tax Amount Paid (£)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  value={formData.taxPaid}
+                  onChange={(e) => updateField("taxPaid", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Transaction Ref</label>
+                <input
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  value={formData.transactionRef}
+                  onChange={(e) => updateField("transactionRef", e.target.value)}
+                  placeholder="e.g. BANK-12345"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* REGISTER OF MEMBERS */}
+          {showRegisterMembers && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective Date</label>
+                  <input
+                    type="date"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.effectiveDate}
+                    onChange={(e) => updateField("effectiveDate", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change Type</label>
+                  <select
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.changeType}
+                    onChange={(e) => updateField("changeType", e.target.value)}
+                  >
+                    <option value="ISSUE_SHARES">Issue Shares</option>
+                    <option value="TRANSFER_SHARES">Transfer Shares</option>
+                    <option value="CANCEL_SHARES">Cancel/Redeem Shares</option>
+                    <option value="CORRECTION">Correction</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member Name</label>
+                  <input
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.toMemberName}
+                    onChange={(e) => updateField("toMemberName", e.target.value)}
+                    placeholder="Full legal name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">
+                    From Member (if transfer)
+                  </label>
+                  <input
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.fromMemberName}
+                    onChange={(e) => updateField("fromMemberName", e.target.value)}
+                    disabled={formData.changeType !== "TRANSFER_SHARES"}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Member Address</label>
+                <textarea
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  rows="2"
+                  value={formData.memberAddress}
+                  onChange={(e) => updateField("memberAddress", e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Share Class</label>
+                  <input
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.shareClass}
+                    onChange={(e) => updateField("shareClass", e.target.value)}
+                    placeholder="e.g. Ordinary"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Shares Change (+/-)</label>
+                  <input
+                    type="number"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.sharesChange}
+                    onChange={(e) => updateField("sharesChange", e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Certificate Ref</label>
+                  {formData.changeType === "ISSUE_SHARES" && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateCertificate}
+                      disabled={generatingCert}
+                      className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:underline disabled:opacity-50"
+                    >
+                      {generatingCert ? "Generating..." : "Auto-Generate Cert 📜"}
+                    </button>
+                  )}
+                </div>
+                <input
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  value={formData.certificateRef}
+                  onChange={(e) => updateField("certificateRef", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Internal Notes</label>
+                <textarea
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  rows="2"
+                  value={formData.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* REGISTER OF DIRECTORS */}
+          {showRegisterDirectors && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Effective Date</label>
+                  <input
+                    type="date"
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.directorEffectiveDate}
+                    onChange={(e) => updateField("directorEffectiveDate", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Change Type</label>
+                  <select
+                    className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                    value={formData.directorChangeType}
+                    onChange={(e) => updateField("directorChangeType", e.target.value)}
+                  >
+                    <option value="APPOINT">Appoint Director</option>
+                    <option value="RESIGN">Resign Director</option>
+                    <option value="UPDATE_DETAILS">Update Details</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Full Name</label>
+                <input
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  value={formData.directorName}
+                  onChange={(e) => updateField("directorName", e.target.value)}
+                  required
+                />
+              </div>
+
+              {formData.directorChangeType !== "RESIGN" && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Service Address</label>
+                    <textarea
+                      className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                      rows="2"
+                      value={formData.directorServiceAddress}
+                      onChange={(e) => updateField("directorServiceAddress", e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Nationality</label>
+                      <input
+                        className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                        value={formData.directorNationality}
+                        onChange={(e) => updateField("directorNationality", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Occupation</label>
+                      <input
+                        className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                        value={formData.directorOccupation}
+                        onChange={(e) => updateField("directorOccupation", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">DOB</label>
+                      <input
+                        type="date"
+                        className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                        value={formData.directorDob}
+                        onChange={(e) => updateField("directorDob", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Country of Residence</label>
+                      <input
+                        className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                        value={formData.directorCountryOfResidence}
+                        onChange={(e) => updateField("directorCountryOfResidence", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-bold text-gray-400 ml-2 uppercase">Internal Notes</label>
+                <textarea
+                  className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-800 font-bold transition"
+                  rows="2"
+                  value={formData.directorNotes}
+                  onChange={(e) => updateField("directorNotes", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           <button
             disabled={loading || calculating}

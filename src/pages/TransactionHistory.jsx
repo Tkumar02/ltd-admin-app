@@ -360,6 +360,16 @@ const TransactionHistory = () => {
     }
   };
 
+  const totalRevenue = ledger
+    .filter((item) => item.entryType === "INCOME")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  const totalExpenditure = ledger
+    .filter((item) => item.entryType === "EXPENSE")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  const netProfit = totalRevenue - totalExpenditure;
+
   if (loading)
     return <div className="p-10 text-center dark:text-white font-black animate-pulse">SYNCING LEDGER...</div>;
 
@@ -435,6 +445,28 @@ const TransactionHistory = () => {
             </button>
           </div>
         </header>
+
+        {/* Summary Dashboard */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Revenue</p>
+            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+              £{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Expenditure</p>
+            <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
+              £{totalExpenditure.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Overall Profit</p>
+            <p className={`text-2xl font-black ${netProfit >= 0 ? "text-indigo-600 dark:text-indigo-400" : "text-rose-600"}`}>
+              £{netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+        </div>
 
         <div className="bg-white dark:bg-[#121721] rounded-[2.5rem] shadow-2xl border border-slate-200/60 dark:border-slate-800 overflow-hidden">
           <div className="overflow-x-auto">
