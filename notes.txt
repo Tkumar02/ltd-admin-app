@@ -15,7 +15,7 @@ pw - demoUSER
 to deploy:
 
 npm run build
-firebase deploy --only hosting:ltd-admin-app
+firebase deploy --only hosting:finnexa-admin
 
 if company was incorporated on 1st jan 2024
 Requirement,Period Covered,Filing Deadline

@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "target": "ltd-admin-app",
+    "target": "finnexa-admin",
     "public": "dist",
     "ignore": [
       "firebase.json",

@@ -8,6 +8,9 @@
       "hosting": {
         "ltd-admin-app": [
           "ltd-admin"
+        ],
+        "finnexa-admin": [
+          "finnexa-ltd-admin"
         ]
       }
     }
