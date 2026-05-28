@@ -571,8 +571,8 @@ const RecordFiling = () => {
       : "";
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10 transition-colors">
-      <div className="max-w-2xl mx-auto bg-white dark:bg-gray-900 p-8 md:p-12 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-gray-800">
+    <div className="min-h-screen p-4 md:p-10 transition-colors">
+      <div className="max-w-2xl mx-auto bg-transparent p-8 md:p-12 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-gray-800">
         <header className="mb-10">
           <div className="flex items-center gap-3 mb-2">
             <button

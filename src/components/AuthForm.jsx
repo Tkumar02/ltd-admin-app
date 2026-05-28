@@ -74,7 +74,7 @@ export default function AuthForm({ onUserChange }) {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-[#FDFCF8] dark:bg-[#0A0D14] transition-colors duration-700">
+        <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-700">
             <div className="max-w-md w-full">
                 
                 <div className="text-center mb-10">
@@ -84,7 +84,7 @@ export default function AuthForm({ onUserChange }) {
                     <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 mt-2">Intelligent Finance</p>
                 </div>
 
-                <div className="bg-white dark:bg-[#121721] p-10 rounded-[3rem] shadow-2xl border border-slate-200/60 dark:border-slate-800">
+                <div className="bg-transparent p-10 rounded-[3rem] shadow-2xl border border-slate-200/60 dark:border-slate-800">
                     <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase italic tracking-tighter mb-8">
                         {isRegistering ? "Get Started" : "Secure Login"}
                     </h2>

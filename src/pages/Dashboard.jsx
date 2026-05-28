@@ -160,7 +160,7 @@ const Dashboard = () => {
     const urgentCompanies = companies.filter(c => getCompanySummary(c).status.label !== "IN PROGRESS");
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F1A] p-4 md:p-10 transition-colors duration-500">
+        <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
             <div className="max-w-6xl mx-auto">
                 <header className="mb-12">
                     <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter italic uppercase">Portfolio</h1>

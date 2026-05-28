@@ -91,7 +91,7 @@ const FilingsHistory = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6">
+      <div className="min-h-screen p-6 transition-colors duration-500">
         <div className="max-w-5xl mx-auto text-center font-black uppercase tracking-[0.3em] text-xs text-gray-400 animate-pulse">
           Loading Filing History...
         </div>
@@ -100,7 +100,7 @@ const FilingsHistory = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6 transition-colors">
+    <div className="min-h-screen p-6 transition-colors duration-500">
       <div className="max-w-5xl mx-auto">
         <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>

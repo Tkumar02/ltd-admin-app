@@ -1,79 +1,43 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
-:root {
-  /* font-family: system-ui, Avenir, Helvetica, Arial, sans-serif; */
-  line-height: 1.5;
-  font-weight: 400;
-  width: 100vw;
-
-  color-scheme: light dark;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-h1, span, p, a {
-  font-family: 'Playfair Display', serif !important;
-}
-
-/* a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-} */
-
-body {
-  margin: 0;
-  /* display: flex; */
-  /* place-items: center; */
-  width: 100%;
-  /* min-width: 320px; */
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-/* button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-} */
-
-/* button:hover {
-  border-color: #646cff;
-}
-
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-} */
-
-@media (prefers-color-scheme: light) {
+@layer base {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    --bg-light: #FDFCF8;
+    --bg-dark: #0A0D14;
+    
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
   }
 
-  a:hover {
-    color: #747bff;
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--bg-light);
+    color: #1a1a1a;
+    transition: background-color 0.3s ease;
   }
 
-  /* button {
-    background-color: #f9f9f9;
-  } */
+  .dark body {
+    background-color: var(--bg-dark);
+    color: #f8f8f8;
+  }
+
+  /* Force all elements to use the same font */
+  h1, h2, h3, h4, h5, h6, p, span, a, button, input, textarea, select {
+    font-family: inherit;
+  }
+}
+
+@layer components {
+  /* Common utility for the "flat" card look if needed */
+  .flat-card {
+    @apply bg-transparent border border-slate-200/60 dark:border-slate-800 shadow-sm rounded-[2rem];
+  }
+}
+
+/* Ensure smooth dark mode transition */
+* {
+  border-color: inherit;
 }

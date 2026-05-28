@@ -79,8 +79,8 @@ export default function RegisterDirectors() {
   }, [updates]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10 transition-colors">
-      <div className="max-w-5xl mx-auto">
+      <div className="min-h-screen p-4 md:p-10 transition-colors">
+          <div className="max-w-5xl mx-auto">
         <header className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <button

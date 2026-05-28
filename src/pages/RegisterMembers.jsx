@@ -300,8 +300,8 @@ const RegisterMembers = () => {
   const empty = !loadingUpdates && register.events.length === 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F1A] p-4 md:p-10 transition-colors duration-500">
-      <div className="max-w-6xl mx-auto">
+      <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
+          <div className="max-w-5xl mx-auto">
         <header className="mb-10">
           <div className="flex items-center gap-3 mb-2">
             <button

@@ -415,7 +415,7 @@ const Filings = () => {
   const hasNoCompanies = !loadingCompanies && companies.length === 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6 transition-colors duration-300">
+    <div className="min-h-screen p-6 transition-colors duration-300">
       <div className="max-w-4xl mx-auto">
         <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>

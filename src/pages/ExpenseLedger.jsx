@@ -63,14 +63,14 @@ const ExpenseLedger = () => {
 
     const getPeriods = (company) => {
         if (!company) return [];
-        let ard = company.nextAccountsDate ? dayjs(company.nextAccountsDate) : dayjs(company.incorporationDate).add(1, 'year');
+        let ard = company.nextAccountsDate ? dayjs(company.nextAccountsDate) : dayjs(company.incorporationDate).add(1, 'year').endOf('month');
         while (dayjs().isAfter(ard)) { ard = ard.add(1, 'year'); }
         const periods = [];
         let i = 0;
         const incDate = dayjs(company.incorporationDate);
 
         while (true) {
-            const end = ard.subtract(i, 'year');
+            const end = ard.subtract(i, 'year').endOf('month');
             let start = end.subtract(1, 'year').add(1, 'day');
             if (start.isBefore(incDate)) { start = incDate; };
             if (end.diff(start, 'day') < 2) break;
@@ -124,7 +124,7 @@ const ExpenseLedger = () => {
     if (loading) return <div className="p-10 text-center font-black animate-pulse dark:text-white">LOADING EXPENDITURE...</div>;
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-[#0B0F1A] p-4 md:p-10 transition-colors duration-500">
+        <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
             <div className="max-w-6xl mx-auto">
                 
                 <header className="mb-10 flex justify-between items-start">
@@ -212,12 +212,20 @@ const ExpenseLedger = () => {
 
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transactions</h2>
-                            <button 
-                                onClick={() => navigate(`/record-expense/${selectedCompany.id}`)}
-                                className="px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-500/20"
-                            >
-                                + Log Expense
-                            </button>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => navigate(`/analytics/${selectedCompany.id}/expense`)}
+                                    className="px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg"
+                                >
+                                    Analytics
+                                </button>
+                                <button 
+                                    onClick={() => navigate(`/record-expense/${selectedCompany.id}`)}
+                                    className="px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-500/20"
+                                >
+                                    + Log Expense
+                                </button>
+                            </div>
                         </div>
 
                         <div className="bg-white dark:bg-[#121826] rounded-[2rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden">

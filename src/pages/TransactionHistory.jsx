@@ -15,18 +15,60 @@ import {
 import dayjs from "dayjs";
 import { toast, ToastContainer } from "react-toastify";
 import * as XLSX from "xlsx";
+import useCurrentUser from "../utils/getCurrentUser";
+import getCompaniesByEmail from "../utils/getCompaniesByEmail";
 
 const TransactionHistory = () => {
   const { companyId } = useParams();
   const navigate = useNavigate();
+  const user = useCurrentUser();
 
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [companies, setCompanies] = useState([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(companyId || "");
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [periods, setPeriods] = useState([]);
   const [companyName, setCompanyName] = useState("");
   const [companyMeta, setCompanyMeta] = useState(null);
   const [exporting, setExporting] = useState(false);
+
+  // 1) Fetch companies + auto-select when only one
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      if (!user?.email) return;
+      setLoadingCompanies(true);
+      try {
+        const data = await getCompaniesByEmail(user.email);
+        setCompanies(data);
+        
+        if (!companyId && data.length === 1) {
+          setSelectedCompanyId(data[0].id);
+          navigate(`/transactions/${data[0].id}`, { replace: true });
+        }
+      } catch (err) {
+        console.error("Error fetching companies:", err);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+
+    fetchCompanies();
+  }, [user, companyId, navigate]);
+
+  // 2) Sync selectedCompanyId with URL param
+  useEffect(() => {
+    if (companyId) setSelectedCompanyId(companyId);
+    else setSelectedCompanyId("");
+  }, [companyId]);
+
+  const handleSelectChange = (e) => {
+    const id = e.target.value;
+    setSelectedCompanyId(id);
+    if (id) navigate(`/transactions/${id}`);
+    else navigate(`/transactions`);
+  };
 
   const slugify = (s) =>
     String(s || "company")
@@ -40,7 +82,7 @@ const TransactionHistory = () => {
     if (!company) return [];
     let ard = company.nextAccountsDate
       ? dayjs(company.nextAccountsDate)
-      : dayjs(company.incorporationDate).add(1, "year");
+      : dayjs(company.incorporationDate).add(1, "year").endOf("month");
     while (dayjs().isAfter(ard)) {
       ard = ard.add(1, "year");
     }
@@ -50,7 +92,7 @@ const TransactionHistory = () => {
     const incDate = dayjs(company.incorporationDate);
 
     while (keepGoing) {
-      const end = ard.subtract(i, "year");
+      const end = ard.subtract(i, "year").endOf("month");
       let start = end.subtract(1, "year").add(1, "day");
       if (start.isBefore(incDate)) {
         start = incDate;
@@ -72,11 +114,19 @@ const TransactionHistory = () => {
   };
 
   useEffect(() => {
-    if (!companyId) return;
-    const companyRef = doc(db, "companies", companyId);
+    if (!selectedCompanyId) {
+      setLoading(false);
+      setLedger([]);
+      return;
+    }
+    setLoading(true);
+    const companyRef = doc(db, "companies", selectedCompanyId);
 
     const unsubAll = onSnapshot(companyRef, (companySnap) => {
-      if (!companySnap.exists()) return;
+      if (!companySnap.exists()) {
+        setLoading(false);
+        return;
+      }
       const companyData = companySnap.data();
       const name = companyData.name;
 
@@ -90,11 +140,11 @@ const TransactionHistory = () => {
         calculatedPeriods.length > 0 ? calculatedPeriods[0].start : dayjs().startOf("year");
 
       const qExpenses = query(
-        collection(db, "companies", companyId, "transactions"),
+        collection(db, "companies", selectedCompanyId, "transactions"),
         orderBy("date", "desc")
       );
       const qOtherRev = query(
-        collection(db, "companies", companyId, "other_revenue"),
+        collection(db, "companies", selectedCompanyId, "other_revenue"),
         orderBy("date", "desc")
       );
       const qInvoices = query(collection(db, "invoices"), orderBy("date", "desc"));
@@ -155,13 +205,13 @@ const TransactionHistory = () => {
     });
 
     return () => unsubAll();
-  }, [companyId, showAllHistory]);
+  }, [selectedCompanyId, showAllHistory]);
 
   const handleDelete = async (id, type) => {
     const collectionName = type === "INCOME" ? "other_revenue" : "transactions";
     if (!window.confirm(`Permanently delete this ${type.toLowerCase()}?`)) return;
     try {
-      await deleteDoc(doc(db, "companies", companyId, collectionName, id));
+      await deleteDoc(doc(db, "companies", selectedCompanyId, collectionName, id));
       toast.success("Entry deleted");
     } catch (error) {
       toast.error("Error deleting");
@@ -170,7 +220,6 @@ const TransactionHistory = () => {
 
   // ---------- Export helpers ----------
   const buildLedgerRowsForExcel = () => {
-    // Sorted ascending for accountants
     return ledger
       .slice()
       .sort((a, b) => dayjs(a.date).unix() - dayjs(b.date).unix())
@@ -200,7 +249,7 @@ const TransactionHistory = () => {
 
   const fetchLastConfirmationStatement = async () => {
     try {
-      const historyRef = collection(db, "companies", companyId, "filingHistory");
+      const historyRef = collection(db, "companies", selectedCompanyId, "filingHistory");
       const q1 = query(
         historyRef,
         where("filingType", "==", "Confirmation Statement"),
@@ -218,7 +267,7 @@ const TransactionHistory = () => {
 
   const fetchRegisterUpdates = async () => {
     try {
-      const regRef = collection(db, "companies", companyId, "registerUpdates");
+      const regRef = collection(db, "companies", selectedCompanyId, "registerUpdates");
       const q1 = query(regRef, orderBy("createdAt", "desc"), limit(500));
       const snap = await getDocs(q1);
       if (snap.empty) return [];
@@ -257,10 +306,9 @@ const TransactionHistory = () => {
       const conf = await fetchLastConfirmationStatement();
       const regUpdates = await fetchRegisterUpdates();
 
-      // Sheet 1: Summary
       const summary = [
         { Key: "Company Name", Value: companyName || "" },
-        { Key: "Company ID (Firestore)", Value: companyId || "" },
+        { Key: "Company ID (Firestore)", Value: selectedCompanyId || "" },
         { Key: "Export Date", Value: now },
         { Key: "Export Scope", Value: showAllHistory ? "All time" : "Current period only" },
         { Key: "Current Period (if applicable)", Value: currentPeriod },
@@ -277,9 +325,7 @@ const TransactionHistory = () => {
             : "",
         },
         { Key: "Is First Year Flag", Value: typeof companyMeta?.isFirstYear === "boolean" ? String(companyMeta.isFirstYear) : "" },
-
         { Key: "", Value: "" },
-
         { Key: "Last Confirmation Statement: Directors", Value: conf?.directors || "" },
         { Key: "Last Confirmation Statement: SIC Code", Value: conf?.sicCode || "" },
         { Key: "Last Confirmation Statement: Share Capital", Value: conf?.shareCapital || "" },
@@ -287,70 +333,23 @@ const TransactionHistory = () => {
         { Key: "Register Updates Included", Value: regUpdates.length ? `Yes (${regUpdates.length} rows)` : "No" },
       ];
 
-      // Sheet 2: Ledger
       const ledgerRows = buildLedgerRowsForExcel();
+      const regRows = regUpdates.length ? regUpdates : [{ CreatedAt: "", EffectiveDate: "", ChangeType: "", ToMemberName: "", FromMemberName: "", MemberAddress: "", ShareClass: "", SharesChange: "", CertificateRef: "", Notes: "", DocumentId: "" }];
 
-      // Sheet 3: Register updates (always create sheet, even if empty)
-      const regRows = regUpdates.length
-        ? regUpdates
-        : [
-            {
-              CreatedAt: "",
-              EffectiveDate: "",
-              ChangeType: "",
-              ToMemberName: "",
-              FromMemberName: "",
-              MemberAddress: "",
-              ShareClass: "",
-              SharesChange: "",
-              CertificateRef: "",
-              Notes: "",
-              DocumentId: "",
-            },
-          ];
-
-      // Build workbook
       const wb = XLSX.utils.book_new();
-
       const wsSummary = XLSX.utils.json_to_sheet(summary);
       const wsLedger = XLSX.utils.json_to_sheet(ledgerRows);
       const wsReg = XLSX.utils.json_to_sheet(regRows);
 
-      // Make columns a bit wider (optional quality of life)
       wsSummary["!cols"] = [{ wch: 32 }, { wch: 80 }];
-      wsLedger["!cols"] = [
-        { wch: 12 }, // Date
-        { wch: 10 }, // EntryType
-        { wch: 6 },  // Flow
-        { wch: 12 }, // Amount
-        { wch: 28 }, // Payee
-        { wch: 18 }, // Category
-        { wch: 16 }, // Subtype
-        { wch: 40 }, // Notes
-        { wch: 18 }, // SourceSystem
-        { wch: 20 }, // DocumentId
-      ];
-      wsReg["!cols"] = [
-        { wch: 18 },
-        { wch: 12 },
-        { wch: 18 },
-        { wch: 22 },
-        { wch: 22 },
-        { wch: 34 },
-        { wch: 14 },
-        { wch: 14 },
-        { wch: 18 },
-        { wch: 28 },
-        { wch: 20 },
-      ];
+      wsLedger["!cols"] = [{ wch: 12 }, { wch: 10 }, { wch: 6 }, { wch: 12 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 18 }, { wch: 20 }];
+      wsReg["!cols"] = [{ wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 34 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 28 }, { wch: 20 }];
 
       XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
       XLSX.utils.book_append_sheet(wb, wsLedger, "Ledger");
       XLSX.utils.book_append_sheet(wb, wsReg, "RegisterUpdates");
 
-      // Download (browser)
       XLSX.writeFile(wb, baseName);
-
       toast.success("Excel accountant pack downloaded");
     } catch (e) {
       console.error(e);
@@ -370,194 +369,187 @@ const TransactionHistory = () => {
 
   const netProfit = totalRevenue - totalExpenditure;
 
-  if (loading)
-    return <div className="p-10 text-center dark:text-white font-black animate-pulse">SYNCING LEDGER...</div>;
+  const showCompanyPicker = companies.length > 1;
+  const hasNoCompanies = !loadingCompanies && companies.length === 0;
+
+  if (loadingCompanies)
+    return <div className="p-10 text-center dark:text-white font-black animate-pulse">SCANNING PORTFOLIO...</div>;
 
   return (
-    <div className="min-h-screen bg-[#FDFCF8] dark:bg-[#0A0D14] p-4 md:p-12 transition-colors duration-700">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
+      <div className="max-w-6xl mx-auto">
         <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
           <div>
-            <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic">
-              Ledger
+            <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic leading-none">
+              Summary
             </h1>
-            <p>{companyName}</p>
+            
+            {selectedCompanyId && (
+              <>
+                <p className="font-bold text-slate-500 mt-3 uppercase tracking-widest text-[10px]">{companyName}</p>
 
-            <div className="flex items-center gap-4 mt-2 flex-wrap">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-indigo-400/80">
-                Unified History
-              </p>
+                <div className="flex items-center gap-4 mt-6 flex-wrap">
+                  <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
+                    <button
+                      onClick={() => setShowAllHistory(false)}
+                      className={`px-3 py-1 text-[9px] font-black uppercase rounded ${
+                        !showAllHistory
+                          ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      Current
+                    </button>
+                    <button
+                      onClick={() => setShowAllHistory(true)}
+                      className={`px-3 py-1 text-[9px] font-black uppercase rounded ${
+                        showAllHistory
+                          ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      All Time
+                    </button>
+                  </div>
 
-              {/* Toggle UI Buttons */}
-              <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
-                <button
-                  onClick={() => setShowAllHistory(false)}
-                  className={`px-3 py-1 text-[9px] font-black uppercase rounded ${
-                    !showAllHistory
-                      ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow"
-                      : "text-slate-500"
-                  }`}
-                >
-                  Current
-                </button>
-                <button
-                  onClick={() => setShowAllHistory(true)}
-                  className={`px-3 py-1 text-[9px] font-black uppercase rounded ${
-                    showAllHistory
-                      ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow"
-                      : "text-slate-500"
-                  }`}
-                >
-                  All Time
-                </button>
-              </div>
+                  <button
+                    onClick={downloadAccountantPackXlsx}
+                    disabled={exporting}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm active:scale-95 transition-all disabled:opacity-60"
+                  >
+                    {exporting ? "EXPORTING..." : "ACCOUNTANT PACK (.XLSX)"}
+                  </button>
+                </div>
 
-              {/* Excel Export */}
-              <button
-                onClick={downloadAccountantPackXlsx}
-                disabled={exporting}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm active:scale-95 transition-all disabled:opacity-60"
-                title="Download Summary + Ledger + Register Updates as a single .xlsx"
-              >
-                {exporting ? "EXPORTING..." : "ACCOUNTANT PACK (.XLSX)"}
-              </button>
-            </div>
-
-            {!showAllHistory && periods[0] && (
-              <p className="text-[9px] font-bold text-emerald-500 dark:text-emerald-400 mt-2">
-                Period: {periods[0].display}
-              </p>
+                {!showAllHistory && periods[0] && (
+                  <p className="text-[9px] font-bold text-emerald-500 dark:text-emerald-400 mt-2">
+                    Period: {periods[0].display}
+                  </p>
+                )}
+              </>
             )}
           </div>
 
-          <div className="flex w-full md:w-auto gap-3">
-            <button
-              onClick={() => navigate(`/record-revenue/${companyId}`)}
-              className="flex-1 md:flex-none bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-            >
-              + Income
-            </button>
-            <button
-              onClick={() => navigate(`/record-expense/${companyId}`)}
-              className="flex-1 md:flex-none bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-            >
-              + Expense
-            </button>
-          </div>
+          {selectedCompanyId && (
+            <div className="flex w-full md:w-auto gap-3">
+              <button
+                onClick={() => navigate(`/record-revenue/${selectedCompanyId}`)}
+                className="flex-1 md:flex-none bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                + Income
+              </button>
+              <button
+                onClick={() => navigate(`/record-expense/${selectedCompanyId}`)}
+                className="flex-1 md:flex-none bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                + Expense
+              </button>
+            </div>
+          )}
         </header>
 
-        {/* Summary Dashboard */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Revenue</p>
-            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-              £{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+        {hasNoCompanies ? (
+          <div onClick={() => navigate("/company-settings")} className="p-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[3rem] text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
+            <p className="font-black uppercase tracking-widest text-xs text-slate-400">No companies found. Click to onboard.</p>
           </div>
-          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Expenditure</p>
-            <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
-              £{totalExpenditure.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-[#121721] p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Overall Profit</p>
-            <p className={`text-2xl font-black ${netProfit >= 0 ? "text-indigo-600 dark:text-indigo-400" : "text-rose-600"}`}>
-              £{netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
+        ) : (
+          <>
+            {showCompanyPicker && (
+              <div className="mb-10 bg-slate-50/50 dark:bg-slate-800/20 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800/50">
+                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3 ml-1">Select Company</label>
+                <select
+                  className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 text-slate-900 dark:text-white outline-none font-bold"
+                  onChange={handleSelectChange}
+                  value={selectedCompanyId}
+                >
+                  <option value="">Choose from portfolio...</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-        <div className="bg-white dark:bg-[#121721] rounded-[2.5rem] shadow-2xl border border-slate-200/60 dark:border-slate-800 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
-                  <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Detail</th>
-                  <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">Notes</th>
-                  <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Flow</th>
-                  <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                </tr>
-              </thead>
+            {!selectedCompanyId ? (
+              <div className="p-20 text-center border-4 border-dashed border-slate-100 dark:border-slate-800/50 rounded-[3rem]">
+                <p className="text-slate-400 font-black uppercase tracking-[0.4em] text-xs">Select a company to view the ledger</p>
+              </div>
+            ) : (
+              <>
+                {loading ? (
+                  <div className="p-20 text-center font-black animate-pulse uppercase tracking-widest text-xs">Syncing Ledger...</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                      <div className="bg-transparent p-8 rounded-[2.5rem] border border-slate-200/60 dark:border-slate-800 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Revenue</p>
+                        <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">£{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      </div>
+                      <div className="bg-transparent p-8 rounded-[2.5rem] border border-slate-200/60 dark:border-slate-800 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Expenditure</p>
+                        <p className="text-3xl font-black text-rose-600 dark:text-rose-400">£{totalExpenditure.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      </div>
+                      <div className="bg-transparent p-8 rounded-[2.5rem] border border-slate-200/60 dark:border-slate-800 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Overall Profit</p>
+                        <p className={`text-3xl font-black ${netProfit >= 0 ? "text-indigo-600 dark:text-indigo-400" : "text-rose-600"}`}>£{netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    </div>
 
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                {ledger.map((item) => {
-                  const isIncome = item.entryType === "INCOME";
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`transition-colors ${
-                        isIncome
-                          ? "bg-emerald-50/40 dark:bg-emerald-500/5 hover:bg-emerald-100/60 dark:hover:bg-emerald-500/10"
-                          : "bg-rose-50/40 dark:bg-rose-500/5 hover:bg-rose-100/60 dark:hover:bg-rose-500/10"
-                      }`}
-                    >
-                      <td className="p-4 md:p-6">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                            {dayjs(item.date).format("DD MMM YYYY")}
-                          </span>
-                          <span className="font-black text-slate-900 dark:text-white text-sm uppercase tracking-tight">
-                            {item.payee || "Unknown"}
-                          </span>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase">{item.category}</span>
-                        </div>
-                      </td>
-
-                      <td className="p-4 md:p-6 hidden md:table-cell">
-                        <p className="text-xs text-slate-500 dark:text-slate-400 italic max-w-xs truncate">
-                          {item.notes || item.description || "—"}
-                        </p>
-                      </td>
-
-                      <td className="p-4 md:p-6 text-right">
-                        <div className="flex flex-col items-end">
-                          <span
-                            className={`font-black text-sm md:text-lg ${
-                              isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                            }`}
-                          >
-                            {isIncome ? "+" : "-"} £
-                            {Number(item.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </span>
-                          <span className="text-[8px] font-black uppercase tracking-widest opacity-60 dark:text-white px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 mt-1">
-                            {item.displaySubtype}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="p-4 md:p-6 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() =>
-                              navigate(`/${isIncome ? "edit-revenue" : "edit-expense"}/${companyId}/${item.id}`)
-                            }
-                            className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:text-indigo-500"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(item.id, item.entryType)}
-                            className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:text-rose-600"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                    <div className="rounded-[3rem] border border-slate-200/60 dark:border-slate-800 overflow-hidden shadow-2xl">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                              <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Detail</th>
+                              <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden lg:table-cell">Notes</th>
+                              <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Amount</th>
+                              <th className="p-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                            {ledger.map((item) => {
+                              const isIncome = item.entryType === "INCOME";
+                              return (
+                                <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors">
+                                  <td className="p-6 md:p-8">
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{dayjs(item.date).format("DD MMM YYYY")}</span>
+                                      <span className="font-black text-slate-900 dark:text-white text-base uppercase tracking-tight">{item.payee || "Unknown"}</span>
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase">{item.displaySubtype}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-6 md:p-8 hidden lg:table-cell max-w-xs">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 italic truncate">{item.notes || item.description || "—"}</p>
+                                  </td>
+                                  <td className="p-6 md:p-8 text-right">
+                                    <span className={`font-black text-lg ${isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                                      {isIncome ? "+" : "-"} £{Number(item.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </td>
+                                  <td className="p-6 md:p-8 text-right">
+                                    <div className="flex justify-end gap-2">
+                                      <button onClick={() => navigate(`/${isIncome ? "edit-revenue" : "edit-expense"}/${selectedCompanyId}/${item.id}`)} className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:text-indigo-500 transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                      </button>
+                                      <button onClick={() => handleDelete(item.id, item.entryType)} className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:text-rose-500 transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
       </div>
-
       <ToastContainer theme="dark" position="bottom-center" />
     </div>
   );

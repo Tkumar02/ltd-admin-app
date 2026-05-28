@@ -118,7 +118,7 @@ const RecordExpense = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6 text-gray-900 dark:text-white transition-colors duration-300">
+        <div className="min-h-screen p-6 text-gray-900 dark:text-white transition-colors duration-500">
             <div className="max-w-xl mx-auto bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 dark:border-gray-800">
                 <header className="mb-8 border-b dark:border-gray-800 pb-4">
                     <h1 className="text-3xl font-black tracking-tighter uppercase italic">

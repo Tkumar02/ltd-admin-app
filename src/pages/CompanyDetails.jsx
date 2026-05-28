@@ -74,7 +74,7 @@ const CompanyDetails = () => {
   if (!company) return <p>Company not found.</p>;
 
   return (
-    <div className="p-8 max-w-2xl mx-auto bg-white shadow-md rounded space-y-4">
+    <div className="p-8 max-w-2xl mx-auto space-y-4 transition-colors duration-500">
       <h2 className="text-2xl font-semibold mb-4">{company.name}</h2>
 
       {/* Fields */}

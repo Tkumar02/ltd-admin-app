@@ -15,6 +15,7 @@ import TransactionHistory from "./pages/TransactionHistory";
 import RevenueHistory from "./pages/RevenueHistory";
 import RecordRevenue from "./pages/RecordRevenue";
 import ExpenseLedger from "./pages/ExpenseLedger";
+import Analytics from "./pages/Analytics";
 import RegisterMembers from "./pages/RegisterMembers";
 import FilingsHistory from "./pages/FilingsHistory";
 import DemoTools from "./pages/DemoTools";
@@ -50,13 +51,14 @@ export default function App() {
         <Route path="/record-filing/:companyId/:filingType" element={<RecordFiling />} />
         <Route path="/record-expense/:companyId" element={<RecordExpense />} />
         <Route path="/record-expense" element={<RecordExpense />} />
-        <Route path="/transactions/:companyId" element={<TransactionHistory />} />
+        <Route path="/transactions/:companyId?" element={<TransactionHistory />} />
         <Route path="/edit-expense/:companyId/:transactionId" element={<RecordExpense />} />
         <Route path="/edit-revenue/:companyId/:transactionId" element={<RecordRevenue />} />
         <Route path='/revenue-history' element={<RevenueHistory/>} />
         <Route path='/record-revenue' element={<RecordRevenue/>} />
         <Route path="/record-revenue/:companyId" element={<RecordRevenue />} />
         <Route path='/expense-history' element={<ExpenseLedger/>} />  
+        <Route path="/analytics/:companyId/:type" element={<Analytics />} />
         <Route path='/registers/:companyId/members' element={<RegisterMembers/>} />  
         <Route path="/filings/:companyId/history" element={<FilingsHistory />} />  
         <Route path="demo-tools" element={<DemoTools />} />

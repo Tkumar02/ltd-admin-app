@@ -312,7 +312,7 @@ const DemoTools = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F1A] p-6 md:p-12">
+    <div className="min-h-screen p-6 md:p-12 transition-colors duration-500">
       <div className="max-w-3xl mx-auto bg-white dark:bg-[#121826] border border-slate-200 dark:border-slate-800 rounded-[2.5rem] shadow-2xl p-8">
         <h1 className="text-3xl font-black uppercase italic text-slate-900 dark:text-white">
           Demo Tools

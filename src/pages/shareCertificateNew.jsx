@@ -56,10 +56,9 @@ export default function ShareCertificateNew() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10">
-      <ToastContainer theme="dark" position="bottom-right" />
-      <div className="max-w-2xl mx-auto bg-white dark:bg-gray-900 rounded-[3rem] p-8 md:p-12 border border-slate-100 dark:border-gray-800 shadow-2xl">
-        <button
+  <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
+    <ToastContainer theme="dark" position="bottom-right" />
+    <div className="max-w-2xl mx-auto bg-transparent rounded-[3rem] p-8 md:p-12 border border-slate-100 dark:border-gray-800 shadow-2xl">        <button
           onClick={() => navigate(-1)}
           className="text-gray-400 hover:text-black dark:hover:text-white transition mb-4"
         >

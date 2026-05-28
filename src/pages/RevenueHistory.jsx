@@ -131,7 +131,7 @@ const RevenueLedger = () => {
     if (!company) return [];
     let ard = company.nextAccountsDate
       ? dayjs(company.nextAccountsDate)
-      : dayjs(company.incorporationDate).add(1, "year");
+      : dayjs(company.incorporationDate).add(1, "year").endOf("month");
 
     while (dayjs().isAfter(ard)) ard = ard.add(1, "year");
 
@@ -140,7 +140,7 @@ const RevenueLedger = () => {
     const incDate = dayjs(company.incorporationDate);
 
     while (true) {
-      const end = ard.subtract(i, "year");
+      const end = ard.subtract(i, "year").endOf("month");
       let start = end.subtract(1, "year").add(1, "day");
       if (start.isBefore(incDate)) start = incDate;
       if (end.diff(start, "day") < 2) break;
@@ -273,7 +273,7 @@ const RevenueLedger = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0B0F1A] p-6 md:p-10 transition-colors duration-500">
+    <div className="min-h-screen p-6 md:p-10 transition-colors duration-500">
       <ToastContainer position="bottom-right" theme="dark" />
       <div className="max-w-6xl mx-auto">
         <header className="mb-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -288,6 +288,12 @@ const RevenueLedger = () => {
 
           {selectedCompany && (
             <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => navigate(`/analytics/${selectedCompany.id}/revenue`)}
+                className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg active:scale-95 transition"
+              >
+                Analytics
+              </button>
               <button
                 onClick={() => navigate(`/record-revenue/${selectedCompany.id}`)}
                 className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/20 active:scale-95 transition"

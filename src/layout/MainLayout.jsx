@@ -66,6 +66,17 @@ export default function MainLayout() {
           </Link>
 
           <Link
+            to="/transactions"
+            onClick={closeMobileSidebar}
+            className="group flex items-center gap-4 px-4 py-3 rounded-2xl transition-all hover:bg-white/10"
+          >
+            <span className="w-3 h-3 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.6)]"></span>
+            <span className="text-sm font-black uppercase tracking-widest text-slate-200 group-hover:text-white">
+              Summary
+            </span>
+          </Link>
+
+          <Link
             to="/company-settings"
             onClick={closeMobileSidebar}
             className="group flex items-center gap-4 px-4 py-3 rounded-2xl transition-all hover:bg-white/10"
@@ -106,6 +117,17 @@ export default function MainLayout() {
             <span className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]"></span>
             <span className="text-sm font-black uppercase tracking-widest text-slate-200 group-hover:text-white">
               Filings
+            </span>
+          </Link>
+
+          <Link
+            to="/transactions"
+            onClick={closeMobileSidebar}
+            className="group flex items-center gap-4 px-4 py-3 rounded-2xl transition-all hover:bg-white/10"
+          >
+            <span className="w-3 h-3 rounded-full bg-orange-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]"></span>
+            <span className="text-sm font-black uppercase tracking-widest text-slate-200 group-hover:text-white">
+              Summary
             </span>
           </Link>
 
@@ -153,8 +175,8 @@ export default function MainLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-slate-100 dark:bg-[#07090E]">
-        <div className="p-6 md:p-12">
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-0">
           <Outlet />
         </div>
       </main>

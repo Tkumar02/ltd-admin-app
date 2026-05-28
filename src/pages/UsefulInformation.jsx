@@ -243,25 +243,11 @@ const CompanyDashboard = () => {
   };
 
   return (
-    <div className="container">
+    <div className="container p-6 md:p-12 transition-colors duration-500">
       <style>{`
-        :root {
-          --bg: #ffffff; --text: #0b0c0c; --card-bg: #ffffff;
-          --input-bg: #ffffff; --section-bg: #f3f2f1; --border: #bfc1c3;
-          --muted-text: #505a5f; --accent-blue: #1d70b8;
-        }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --bg: #121212; --text: #f5f5f5; --card-bg: #1e1e1e;
-            --input-bg: #2d2d2d; --section-bg: #252525; --border: #444;
-            --muted-text: #a0a0a0; --accent-blue: #4da3ff;
-          }
-        }
-
         .container { 
-          max-width: 1000px; margin: 0 auto; padding: 20px; 
-          background: var(--bg); color: var(--text);
-          font-family: -apple-system, sans-serif; min-height: 100vh;
+          max-width: 1000px; margin: 0 auto; 
+          min-height: 100vh;
         }
 
         .topBar {

@@ -57,7 +57,7 @@ export default function ShareCertificateView() {
   const issueDate = cert.issueDate ? dayjs(cert.issueDate).format("DD MMM YYYY") : "";
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 p-4 md:p-10">
+    <div className="min-h-screen p-4 md:p-10 transition-colors duration-500">
       {/* Print styles */}
       <style>{`
         @media print {

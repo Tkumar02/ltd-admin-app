@@ -291,32 +291,34 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#FDFCF8] dark:bg-[#0A0D14] transition-colors duration-700">
+    <div className="min-h-screen relative overflow-hidden transition-colors duration-700">
       <div className="relative z-10 p-6 md:p-12 max-w-5xl mx-auto">
-        <header className="flex justify-between items-end mb-12">
-          <div>
-            <h1 className="text-5xl font-black italic tracking-tighter uppercase text-slate-900 dark:text-white">
+        <header className="flex flex-col mb-12 gap-6">
+          <div className="min-w-0">
+            <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter uppercase text-slate-900 dark:text-white leading-none">
               Companies
             </h1>
-            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 dark:text-indigo-400/80 mt-2">
-              {companies.length} Companies
+            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 dark:text-indigo-400/80 mt-3 truncate">
+              {companies.length} Registered Entities
             </p>
           </div>
 
           {view === "list" && (
-            <button
-              onClick={() => setView("add")}
-              className="hidden md:block bg-indigo-600 dark:bg-indigo-500 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-indigo-700 transition-all"
-            >
-              + New Company
-            </button>
+            <div>
+              <button
+                onClick={() => setView("add")}
+                className="bg-indigo-600 dark:bg-indigo-500 text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-3 w-fit"
+              >
+                <span>+ Log New Company</span>
+              </button>
+            </div>
           )}
         </header>
 
         {view === "list" ? (
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
             {loading ? (
-              <div className="col-span-full py-20 text-center font-black text-slate-400 italic animate-pulse tracking-widest uppercase">
+              <div className="col-span-full py-20 text-center font-black text-slate-400 italic animate-pulse tracking-widest uppercase text-xs">
                 Fetching Portfolio...
               </div>
             ) : (
@@ -329,7 +331,7 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
                 return (
                   <div
                     key={c.id}
-                    className="group relative bg-white dark:bg-[#121721] p-8 rounded-[2.5rem] border border-slate-200/60 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-none hover:shadow-indigo-500/10 transition-all"
+                    className="group relative bg-transparent p-8 rounded-[2.5rem] border border-slate-200/60 dark:border-slate-800 shadow-xl shadow-slate-200/20 dark:shadow-none hover:border-indigo-500/50 transition-all"
                   >
                     <div className="mb-10">
                       <h3 className="text-2xl font-black text-slate-900 dark:text-white leading-tight mb-1 truncate pr-16 uppercase tracking-tighter">
@@ -390,7 +392,7 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
         ) : (
           <form
             onSubmit={handleSave}
-            className="bg-white dark:bg-[#121721] p-8 md:p-12 rounded-[3rem] border border-slate-200/60 dark:border-slate-800 shadow-2xl space-y-8"
+            className="bg-transparent p-8 md:p-12 rounded-[3rem] border border-slate-200/60 dark:border-slate-800 shadow-2xl space-y-8"
           >
             <div className="flex justify-between items-center pb-6 border-b border-slate-100 dark:border-slate-800/50">
               <h2 className="text-3xl font-black text-slate-900 dark:text-white italic tracking-tighter uppercase">
@@ -422,7 +424,7 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">
                   CRN Number
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     className="flex-1 p-4 bg-slate-50 dark:bg-[#1A1F2B] border border-slate-200 dark:border-slate-800 rounded-2xl outline-none text-slate-900 dark:text-white"
                     value={number}
@@ -433,9 +435,9 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
                     type="button"
                     onClick={handleCHSync}
                     disabled={syncing}
-                    className="px-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:opacity-80 transition-all disabled:opacity-50"
+                    className="px-6 py-4 sm:py-0 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:opacity-80 transition-all disabled:opacity-50 whitespace-nowrap"
                   >
-                    {syncing ? "..." : "Sync"}
+                    {syncing ? "Syncing..." : "Sync"}
                   </button>
                 </div>
               </div>
@@ -471,7 +473,7 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
 
             {/* ✅ Manual toggle */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-6 rounded-[2rem] bg-white dark:bg-[#121721] border border-slate-200/60 dark:border-slate-800">
+              <div className="p-6 rounded-[2rem] bg-transparent border border-slate-200/60 dark:border-slate-800">
                 <label className="flex items-center gap-3 select-none cursor-pointer">
                   <input
                     type="checkbox"
@@ -492,7 +494,7 @@ const statusLabel = useMemo(() => (hasFiledBefore ? "Established" : "Year 1"), [
                 </p>
               </div>
 
-              <div className="p-6 rounded-[2rem] bg-white dark:bg-[#121721] border border-slate-200/60 dark:border-slate-800">
+              <div className="p-6 rounded-[2rem] bg-transparent border border-slate-200/60 dark:border-slate-800">
                 <label className="flex items-center gap-3 select-none cursor-pointer">
                   <input
                     type="checkbox"

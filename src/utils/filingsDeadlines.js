@@ -9,18 +9,23 @@ import dayjs from "dayjs";
  * @param {Array} history - The local filing history
  * @param {Object} chData - Data extracted from Companies House API
  */
+const toDayjs = (v) => {
+  if (!v) return null;
+  if (typeof v === "object" && typeof v.toDate === "function") return dayjs(v.toDate());
+  const d = dayjs(v);
+  return d.isValid() ? d : null;
+};
+
 export function computeFilingsDeadlines(company, todayISO, history = [], chData = null) {
   const today = dayjs(todayISO);
   const isDormant = !!company?.isDormant;
 
-  const incorporationDate = company?.incorporationDate ? dayjs(company.incorporationDate) : null;
-  const lastAccountsPeriodEnd = company?.lastAccountsPeriodEnd
-    ? dayjs(company.lastAccountsPeriodEnd)
-    : null;
+  const incorporationDate = toDayjs(company?.incorporationDate);
+  const lastAccountsPeriodEnd = toDayjs(company?.lastAccountsPeriodEnd);
 
   const tradingStarted =
     company?.accountingStart && dayjs(company.accountingStart).isBefore(today, "day");
-  const accountingStart = tradingStarted ? dayjs(company.accountingStart) : null;
+  const accountingStart = toDayjs(company?.accountingStart);
 
   // Helper to check history
   const hasHistoryFor = (type, periodEnd = null) => {
@@ -41,13 +46,15 @@ export function computeFilingsDeadlines(company, todayISO, history = [], chData 
 
   // Hierarchy: CH -> History -> Doc
   if (chData?.nextConfirmationDue) {
-    confDeadline = dayjs(chData.nextConfirmationDue);
+    confDeadline = toDayjs(chData.nextConfirmationDue);
     confSource = "Companies House Official";
   } else {
-    const lastCS01Date = company.lastCS01FiledOn ? dayjs(company.lastCS01FiledOn) : incorporationDate;
+    const lastCS01Date = toDayjs(company.lastCS01FiledOn) || incorporationDate;
     if (company.lastCS01FiledOn) confSource = "Local Filing History";
     
     if (lastCS01Date) {
+      // Standard: 1 year from previous made-up-to date + 14 days
+      // For first year: 1 year from incorporation + 14 days
       confDeadline = lastCS01Date.add(1, "year").add(14, "day");
       while (confDeadline.isBefore(today, "day")) {
         confDeadline = confDeadline.add(1, "year");
@@ -81,19 +88,36 @@ export function computeFilingsDeadlines(company, todayISO, history = [], chData 
   let accountsSource = "Company Settings Estimate";
 
   if (chData?.nextAccountsDue) {
-    accountsDeadline = dayjs(chData.nextAccountsDue);
-    nextAccountsPeriodEnd = chData.nextAccountsEnd ? dayjs(chData.nextAccountsEnd) : null;
+    accountsDeadline = toDayjs(chData.nextAccountsDue);
+    nextAccountsPeriodEnd = chData.nextAccountsEnd ? toDayjs(chData.nextAccountsEnd) : null;
     accountsSource = "Companies House Official";
   } else {
-    if (lastAccountsPeriodEnd) accountsSource = "Local Filing History";
-    nextAccountsPeriodEnd = lastAccountsPeriodEnd ? lastAccountsPeriodEnd.add(1, "year") : (incorporationDate ? incorporationDate.add(1, "year").endOf("month") : null);
-    
-    if (nextAccountsPeriodEnd) {
-      accountsDeadline = nextAccountsPeriodEnd.add(9, "month");
-      while (accountsDeadline.isBefore(today, "day")) {
-        nextAccountsPeriodEnd = nextAccountsPeriodEnd.add(1, "year");
+    // 1) Determine the period end we are targeting
+    if (lastAccountsPeriodEnd) {
+      accountsSource = "Local Filing History";
+      nextAccountsPeriodEnd = lastAccountsPeriodEnd.add(1, "year");
+    } else if (incorporationDate) {
+      accountsSource = "First Year Estimate";
+      nextAccountsPeriodEnd = incorporationDate.add(1, "year").endOf("month");
+    }
+
+    // 2) Calculate the deadline for that period end
+    if (nextAccountsPeriodEnd && incorporationDate) {
+      const isFirstYear = !lastAccountsPeriodEnd;
+      if (isFirstYear) {
+        // Companies House Rule: First accounts due 21 months from incorporation
+        accountsDeadline = incorporationDate.add(21, "month");
+      } else {
+        // Standard Rule: 9 months after period end
         accountsDeadline = nextAccountsPeriodEnd.add(9, "month");
       }
+    }
+
+    // 3) If that deadline is already in the past, roll forward to the next future deadline
+    while (accountsDeadline && accountsDeadline.isBefore(today, "day")) {
+      nextAccountsPeriodEnd = nextAccountsPeriodEnd.add(1, "year");
+      accountsDeadline = nextAccountsPeriodEnd.add(9, "month");
+      accountsSource = "Company Settings Estimate";
     }
   }
   // Accounts window opens the day AFTER the period ends
